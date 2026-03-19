@@ -1,0 +1,21 @@
+{
+  "name": "hiasenhof-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Öffentliche Website und geschützte Admin-App für Hiasen Hof am Thiersee.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "open": "powershell -NoProfile -Command Start-Process 'http://localhost:3001/index.html'",
+    "local": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$p = Start-Process node -ArgumentList 'server.js' -PassThru; Start-Sleep -Seconds 2; Start-Process 'http://localhost:3001/index.html'; Wait-Process -Id $p.Id\""
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.2",
+    "nodemailer": "^6.10.1",
+    "web-push": "^3.6.7"
+  }
+}

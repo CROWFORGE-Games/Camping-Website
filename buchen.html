@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="de"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buchen | Hiasen Hof am Thiersee</title>
+    <meta name="description" content="Buchungsanfrage für den Hiasen Hof direkt per E-Mail vorbereiten.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&amp;family=Sora:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="./assets/HiasenHofLogo.png">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body class="is-editor-active" style="">
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="brand" href="./index.html" aria-label="Hiasen Hof Startseite">
+          <img class="brand-logo" src="./assets/HiasenHofLogo.png" alt="Hiasen Hof Logo">
+          <span class="brand-copy">
+            <strong>Hiasen Hof</strong>
+            <span>Camping am Thiersee</span>
+          </span>
+        </a>
+
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+          Menü
+        </button>
+
+        <nav class="site-nav" id="site-nav" aria-label="Hauptnavigation">
+          <a href="./index.html">Start</a>
+          <a href="./campingplatz.html">Campingplatz</a>
+          <a href="./erlebnisse.html">Aktivitäten</a>
+          <a href="./preise.html">Preise</a>
+          <a class="is-active" href="./buchen.html">Buchen</a>
+          <a href="./anreise.html">Anreise</a>
+          <a class="nav-cta" href="./buchen.html">Jetzt anfragen</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="page-hero">
+          <div class="page-hero-inner">
+            <p class="eyebrow">Buchen</p>
+            <h1>Buchungsanfrage direkt vorbereiten</h1>
+            <p>
+              Freien Wunschplatz auswählen, Hinweise prüfen und die Anfrage direkt an den
+              Hiasen Hof senden. Verbindlich wird die Buchung erst mit Rückantwort.
+            </p>
+          </div>
+        </section>
+
+        <section class="section booking booking-stack">
+          <section class="booking-plan-card booking-plan-card-wide" aria-labelledby="booking-plan-title">
+            <div class="booking-plan-header">
+              <div>
+                <p class="eyebrow">Wunschplatz</p>
+                <h2 id="booking-plan-title">Freien Stellplatz direkt auswählen</h2>
+                <p>
+                  Weiße Plätze sind frei und können direkt gewählt werden.
+                  Orange Plätze sind reserviert und rote Plätze aktuell besetzt.
+                </p>
+              </div>
+
+              <div class="status-legend" aria-label="Status der Stellplätze">
+                <span class="status-chip free">Frei</span>
+                <span class="status-chip reserved">Reserviert</span>
+                <span class="status-chip occupied">Besetzt</span>
+              </div>
+            </div>
+
+            <div class="availability-map-scroll">
+              <div class="availability-layout availability-layout-wide" aria-label="Lageplan mit Stellplatzstatus">
+                <div class="availability-marker availability-marker-service">WC / Duschen</div>
+                <div class="availability-marker availability-marker-hof">Hiasen-Hof</div>
+
+                <section class="availability-zone availability-zone-wiese3">
+                  <button type="button" class="availability-zone-trigger" data-zone-detail-trigger="wiese3" data-zone-readonly="false">
+                    <div class="zone-header">
+                      <h3>Wiese 3</h3>
+                      <p>Plätze 12 bis 18</p>
+                    </div>
+                    <span class="availability-zone-action">Detailansicht öffnen</span>
+                  </button>
+                </section>
+
+                <section class="availability-zone availability-zone-wiese1">
+                  <button type="button" class="availability-zone-trigger" data-zone-detail-trigger="wiese1" data-zone-readonly="false">
+                    <div class="zone-header">
+                      <h3>Wiese 1</h3>
+                      <p>Plätze 1 bis 12</p>
+                    </div>
+                    <span class="availability-zone-action">Detailansicht öffnen</span>
+                  </button>
+                </section>
+
+                <section class="availability-zone availability-zone-wiese2">
+                  <button type="button" class="availability-zone-trigger" data-zone-detail-trigger="wiese2" data-zone-readonly="false">
+                    <div class="zone-header">
+                      <h3>Wiese 2</h3>
+                      <p>Plätze 1 bis 11</p>
+                    </div>
+                    <span class="availability-zone-action">Detailansicht öffnen</span>
+                  </button>
+                </section>
+
+                <section class="availability-zone availability-zone-see">
+                  <button type="button" class="availability-zone-trigger" data-zone-detail-trigger="see" data-zone-readonly="false">
+                    <div class="zone-header">
+                      <h3>Seeplätze</h3>
+                      <p>Plätze 1 bis 26</p>
+                    </div>
+                    <span class="availability-zone-action">Detailansicht öffnen</span>
+                  </button>
+                </section>
+
+                <div class="availability-water">Thiersee</div>
+              </div>
+            </div>
+
+            <div class="pitch-detail-modal" id="pitch-detail-modal" hidden="">
+              <div class="pitch-detail-backdrop" data-detail-close=""></div>
+              <div class="pitch-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="pitch-detail-title">
+                <div class="pitch-detail-header">
+                  <div>
+                    <p class="eyebrow">Detailansicht</p>
+                    <h3 id="pitch-detail-title">Wiese 1</h3>
+                    <p id="pitch-detail-subtitle">Plätze 1 bis 12</p>
+                  </div>
+                  <div class="pitch-detail-actions"><button type="button" class="pitch-detail-close" data-detail-close="" aria-label="Detailansicht schließen">
+                    Schließen
+                  </button></div>
+                </div>
+                <div class="pitch-detail-stage">
+                  <div class="pitch-detail-map" id="pitch-detail-map"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pitch-template-store" hidden="" aria-hidden="true">
+              <template id="pitch-template-wiese1">
+                <div class="pitch-detail-canvas">
+                  <img class="pitch-detail-photo" src="./assets/ZoneWiese1.png" alt="Wiese 1 Detailansicht">
+                  <div class="pitch-detail-overlay">
+                    <button type="button" class="pitch-point" data-pitch-number="1" style="left: 12%; top: 18%;">1</button>
+                    <button type="button" class="pitch-point" data-pitch-number="2" style="left: 31%; top: 18%;">2</button>
+                    <button type="button" class="pitch-point" data-pitch-number="3" style="left: 38.01%; top: 17.34%;">3</button>
+                    <button type="button" class="pitch-point" data-pitch-number="4" style="left: 69%; top: 18%;">4</button>
+                    <button type="button" class="pitch-point" data-pitch-number="5" style="left: 12%; top: 43%;">5</button>
+                    <button type="button" class="pitch-point" data-pitch-number="6" style="left: 31%; top: 43%;">6</button>
+                    <button type="button" class="pitch-point" data-pitch-number="7" style="left: 50%; top: 43%;">7</button>
+                    <button type="button" class="pitch-point" data-pitch-number="8" style="left: 69%; top: 43%;">8</button>
+                    <button type="button" class="pitch-point" data-pitch-number="9" style="left: 12%; top: 68%;">9</button>
+                    <button type="button" class="pitch-point" data-pitch-number="10" style="left: 31%; top: 68%;">10</button>
+                    <button type="button" class="pitch-point" data-pitch-number="11" style="left: 50%; top: 68%;">11</button>
+                    <button type="button" class="pitch-point" data-pitch-number="12" style="left: 69%; top: 68%;">12</button>
+                  </div>
+                </div>
+              </template>
+
+              <template id="pitch-template-wiese2">
+                <div class="pitch-detail-canvas">
+                  <img class="pitch-detail-photo" src="./assets/ZoneWiese2.png" alt="Wiese 2 Detailansicht">
+                  <div class="pitch-detail-overlay">
+                    <button type="button" class="pitch-point" data-pitch-number="6" style="left: 12%; top: 18%;">6</button>
+                    <button type="button" class="pitch-point" data-pitch-number="7" style="left: 28%; top: 18%;">7</button>
+                    <button type="button" class="pitch-point" data-pitch-number="8" style="left: 44%; top: 18%;">8</button>
+                    <button type="button" class="pitch-point" data-pitch-number="9" style="left: 60%; top: 18%;">9</button>
+                    <button type="button" class="pitch-point" data-pitch-number="10" style="left: 76%; top: 18%;">10</button>
+                    <button type="button" class="pitch-point" data-pitch-number="5" style="left: 12%; top: 42%;">5</button>
+                    <button type="button" class="pitch-point" data-pitch-number="11" style="left: 76%; top: 42%;">11</button>
+                    <button type="button" class="pitch-point" data-pitch-number="4" style="left: 18%; top: 69%;">4</button>
+                    <button type="button" class="pitch-point" data-pitch-number="3" style="left: 36%; top: 69%;">3</button>
+                    <button type="button" class="pitch-point" data-pitch-number="2" style="left: 54%; top: 69%;">2</button>
+                    <button type="button" class="pitch-point" data-pitch-number="1" style="left: 72%; top: 69%;">1</button>
+                  </div>
+                </div>
+              </template>
+
+              <template id="pitch-template-wiese3">
+                <div class="pitch-detail-canvas">
+                  <img class="pitch-detail-photo" src="./assets/ZoneWiese3.png" alt="Wiese 3 Detailansicht">
+                  <div class="pitch-detail-overlay">
+                    <button type="button" class="pitch-point" data-pitch-number="15" style="left: 14%; top: 22%;">15</button>
+                    <button type="button" class="pitch-point" data-pitch-number="16" style="left: 34%; top: 22%;">16</button>
+                    <button type="button" class="pitch-point" data-pitch-number="17" style="left: 54%; top: 22%;">17</button>
+                    <button type="button" class="pitch-point" data-pitch-number="14" style="left: 18%; top: 58%;">14</button>
+                    <button type="button" class="pitch-point" data-pitch-number="12" style="left: 38%; top: 58%;">12</button>
+                    <button type="button" class="pitch-point" data-pitch-number="13" style="left: 58%; top: 58%;">13</button>
+                    <button type="button" class="pitch-point" data-pitch-number="18" style="left: 78%; top: 58%;">18</button>
+                  </div>
+                </div>
+              </template>
+
+              <template id="pitch-template-see">
+                <div class="pitch-detail-canvas">
+                  <img class="pitch-detail-photo" src="./assets/ZoneSee.png" alt="Seeplätze Detailansicht">
+                  <div class="pitch-detail-overlay">
+                    <button type="button" class="pitch-point" data-pitch-number="1" style="left: 10%; top: 12%;">1</button>
+                    <button type="button" class="pitch-point" data-pitch-number="2" style="left: 20.53%; top: 14.08%;">2</button>
+                    <button type="button" class="pitch-point" data-pitch-number="3" style="left: 31.94%; top: 18.07%;">3</button>
+                    <button type="button" class="pitch-point" data-pitch-number="4" style="left: 42.17%; top: 21.25%;">4</button>
+                    <button type="button" class="pitch-point" data-pitch-number="5" style="left: 52.26%; top: 21.52%;">5</button>
+                    <button type="button" class="pitch-point" data-pitch-number="6" style="left: 61.95%; top: 20.99%;">6</button>
+                    <button type="button" class="pitch-point" data-pitch-number="7" style="left: 69.78%; top: 23.91%;">7</button>
+                    <button type="button" class="pitch-point" data-pitch-number="8" style="left: 78.41%; top: 26.03%;">8</button>
+                    <button type="button" class="pitch-point" data-pitch-number="9" style="left: 86.24%; top: 36.92%;">9</button>
+                    <button type="button" class="pitch-point" data-pitch-number="10" style="left: 74.03%; top: 55.77%;">10</button>
+                    <button type="button" class="pitch-point" data-pitch-number="11" style="left: 65.8%; top: 53.38%;">11</button>
+                    <button type="button" class="pitch-point" data-pitch-number="12" style="left: 55.97%; top: 52.32%;">12</button>
+                    <button type="button" class="pitch-point" data-pitch-number="13" style="left: 47.61%; top: 50.99%;">13</button>
+                    <button type="button" class="pitch-point" data-pitch-number="14" style="left: 37.12%; top: 50.99%;">14</button>
+                    <button type="button" class="pitch-point" data-pitch-number="15" style="left: 25.84%; top: 47.54%;">15</button>
+                    <button type="button" class="pitch-point" data-pitch-number="16" style="left: 17.21%; top: 43.29%;">16</button>
+                    <button type="button" class="pitch-point" data-pitch-number="17" style="left: 15.08%; top: 58.16%;">17</button>
+                    <button type="button" class="pitch-point" data-pitch-number="18" style="left: 24.51%; top: 62.14%;">18</button>
+                    <button type="button" class="pitch-point" data-pitch-number="19" style="left: 36.19%; top: 65.59%;">19</button>
+                    <button type="button" class="pitch-point" data-pitch-number="20" style="left: 44.42%; top: 67.72%;">20</button>
+                    <button type="button" class="pitch-point" data-pitch-number="21" style="left: 53.72%; top: 68.25%;">21</button>
+                    <button type="button" class="pitch-point" data-pitch-number="22" style="left: 61.82%; top: 69.31%;">22</button>
+                    <button type="button" class="pitch-point" data-pitch-number="23" style="left: 72.57%; top: 71.7%;">23</button>
+                    <button type="button" class="pitch-point" data-pitch-number="24" style="left: 82%; top: 84%;">24</button>
+                    <button type="button" class="pitch-point" data-pitch-number="25" style="left: 83.06%; top: 67.19%;">25</button>
+                    <button type="button" class="pitch-point" data-pitch-number="26" style="left: 7.65%; top: 40.11%;">26</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <p class="pitch-selection-status" id="pitch-selection-status">
+              Noch kein Wunschstellplatz ausgewählt.
+            </p>
+          </section>
+
+          <div class="booking-notes-grid">
+            <article class="note-card">
+              <h3>Hinweise zur Anfrage</h3>
+              <ul class="feature-list compact">
+                <li>Bitte hier Ihre Daten eintragen.</li>
+                <li>Die Buchung wird erst durch unsere Rückantwort wirksam.</li>
+                <li>Bei kurzfristigen Buchungen für denselben Tag bitte anrufen.</li>
+                <li>Für Hauptsaison in Juli und August sowie für Gruppenbuchungen ist eine Anzahlung nötig.</li>
+                <li>Spontane Anreisen ohne Anzahlung sind jederzeit möglich.</li>
+                <li>Für Gäste mit nur einer Nacht in der Hauptsaison sind keine Reservierungen notwendig.</li>
+              </ul>
+            </article>
+
+            <article class="note-card"><h3>Kontakt und Reservierung</h3>
+              <p>
+                Anfragen zu Reservierungen und Buchungen bitte möglichst nur per E-Mail. In
+                dringenden Fällen ist telefonische Rückfrage natürlich ebenfalls möglich.</p>
+              <p class="booking-inline-links">
+                <a href="tel:+4366488530524">+43 664 885 305 24</a>
+                <a href="https://hiasenhof-thiersee.at/download/2021/Lageplan_Hiasenhof.pdf" target="_blank" rel="noreferrer">
+                  Lageplan als PDF
+                </a>
+              </p>
+            </article>
+          </div>
+
+          <form class="booking-form" id="booking-form">
+            <input type="hidden" name="preferredPitch" id="preferred-pitch">
+            <input type="hidden" name="estimatedTotal" id="estimated-total" value="">
+
+            <div class="form-grid">
+              <label><span>Name</span><input type="text" name="name" required=""></label>
+              <label><span>Straße</span><input type="text" name="street" required=""></label>
+              <label><span>PLZ / Ort</span><input type="text" name="city" required=""></label>
+              <label><span>Land</span><input type="text" name="country" required=""></label>
+              <label><span>E-Mail</span><input type="email" name="email" required=""></label>
+              <label><span>Telefon</span><input type="tel" name="phone" required=""></label>
+              <label><span>Anreisetag</span><input type="date" name="arrival" required=""></label>
+              <label><span>Abreisetag</span><input type="date" name="departure" required=""></label>
+            </div>
+
+            <fieldset class="checkbox-group">
+              <legend>Platzwahl</legend>
+              <div id="booking-pitch-options"><label><input type="checkbox" name="pitch" value="Wohnmobil"> Wohnmobil</label><label><input type="checkbox" name="pitch" value="Wohnwagen mit PKW"> Wohnwagen mit PKW</label><label><input type="checkbox" name="pitch" value="Transporter / Bus"> Transporter / Bus</label><label><input type="checkbox" name="pitch" value="Auto / Caddy"> Auto / Caddy</label><label><input type="checkbox" name="pitch" value="Motorrad"> Motorrad</label><label><input type="checkbox" name="pitch" value="Zelt bis 4 Personen"> Zelt bis 4 Personen</label><label><input type="checkbox" name="pitch" value="Zelt ab 5 Personen"> Zelt ab 5 Personen</label><label><input type="checkbox" name="pitch" value="Hund"> Hund</label></div>
+            </fieldset>
+
+            <div class="form-grid compact">
+              <label><span>Erwachsene</span><input type="number" name="adults" min="1" required=""></label>
+              <label><span>Kinder</span><input type="number" name="children" min="0" value="0" required=""></label>
+              <label><span>Alter der Kinder</span><input type="text" name="childrenAge" placeholder="z. B. 4,8 oder 4 8" required=""></label>
+            </div>
+
+            <section class="price-estimate" aria-labelledby="price-estimate-title">
+              <div class="price-estimate-header">
+                <div>
+                  <p class="eyebrow">Preisrechner</p>
+                  <h3 id="price-estimate-title">Geschätzter Gesamtpreis</h3>
+                </div>
+                <strong class="price-estimate-total" id="booking-total-price">€&nbsp;0,00</strong>
+              </div>
+              <p class="price-estimate-meta" id="booking-total-meta">Bitte An- und Abreise wählen, damit der Preis berechnet werden kann.</p>
+              <p class="price-estimate-pitch" id="booking-selected-pitch">Platz: Noch kein Wunschstellplatz ausgewählt.</p>
+              <p class="form-warning" id="children-age-warning" aria-live="polite"></p>
+              <ul class="price-estimate-breakdown" id="booking-price-breakdown"><li><span>Noch keine berechenbaren Reisedaten</span><span>€&nbsp;0,00</span></li></ul>
+              <p class="price-estimate-note">
+                Richtwert auf Basis der aktuellen Preisseite. Kinder werden hier als 5 bis 14 Jahre
+                gerechnet; Kinder unter 5 Jahren sind laut Preisinfo frei.
+              </p>
+            </section>
+
+            <label class="full-width">
+              <span>Zusätzliche Informationen / spezielle Wünsche</span>
+              <textarea name="message" rows="5" placeholder="Wunschplatz, Hund, späte Anreise, weitere Infos" required=""></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button class="button button-primary" type="submit">E-Mail senden</button>
+            </div>
+
+            <p class="form-status" id="form-status" aria-live="polite"></p>
+          </form>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="footer-brand">
+          <img class="footer-logo" src="./assets/HiasenHofLogo.png" alt="Hiasen Hof Logo">
+          <div>
+          <p class="eyebrow">Kontakt</p>
+          <h2>Hiasen Hof - Thiersee</h2>
+          <p>Daniel Kaindl, Seebauern 2, A-6335 Thiersee</p>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="tel:+4366488530524">+43 664 885 305 24</a>
+          <a href="mailto:info@hiasenhof-thiersee.at">info@hiasenhof-thiersee.at</a>
+          <a href="./campingplatz.html">Campingplatz</a>
+          <a href="./preise.html">Preise</a>
+          <a href="./anreise.html">Anreise</a>
+          <a href="./impressum.html">Impressum</a>
+        </div>
+        <p class="footer-note">Hiasen Hof am Thiersee. <span id="year">2026</span></p>
+      </footer>
+    </div>
+
+    <script src="./script.js"></script>
+  
+
+
+  
+  
+  
+
+  
+  
+  
+
+  
+  
+  
+
+  
+  
+  
+
+  
+  
+  
+
+  
+  
+  
+
+  
+  
+  
+
+
+  
+  
+  
+
+
+  
+  
+  
+  
+  
+
+  
+  
+  
+  
+  
+
+  
+  
+  
+  
+  
+</body></html>

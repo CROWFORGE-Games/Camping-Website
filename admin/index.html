@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hiasen Hof Admin</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <div class="admin-shell">
+      <section class="login-view" id="login-view">
+        <div class="login-card">
+          <p class="eyebrow">Geschützt</p>
+          <h1>Hiasen Hof Admin</h1>
+          <p>Anmelden, um Preise, Stellplätze, Inhalte, Buchungen und Einstellungen zu verwalten.</p>
+          <form id="login-form" class="stack">
+            <label>
+              <span>E-Mail</span>
+              <input type="email" name="email" required />
+            </label>
+            <label>
+              <span>Passwort</span>
+              <input type="password" name="password" required />
+            </label>
+            <button type="submit">Anmelden</button>
+            <p id="login-status" class="status"></p>
+          </form>
+        </div>
+      </section>
+
+      <section class="app-view hidden" id="app-view">
+        <aside class="sidebar">
+          <div>
+            <p class="eyebrow">Admin-App</p>
+            <h2>Hiasen Hof</h2>
+            <p id="current-user"></p>
+          </div>
+
+          <nav class="menu">
+            <button class="menu-button is-active" data-section="overview">Übersicht</button>
+            <button class="menu-button" data-section="bookings">Buchungen</button>
+            <button class="menu-button" data-section="prices">Preise</button>
+            <button class="menu-button" data-section="pitches">Stellplätze</button>
+            <button class="menu-button" data-section="pages">Website-Inhalte</button>
+            <button class="menu-button" data-section="settings">Einstellungen</button>
+            <button class="menu-button" data-section="users">Benutzer</button>
+          </nav>
+
+          <div class="sidebar-actions">
+            <button id="enable-push" class="secondary" type="button">Push aktivieren</button>
+            <button id="logout-button" class="ghost" type="button">Abmelden</button>
+          </div>
+        </aside>
+
+        <main class="content">
+          <section class="panel section-view" id="section-overview">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Status</p>
+                <h1>Systemübersicht</h1>
+              </div>
+            </div>
+            <div class="stats-grid" id="stats-grid"></div>
+          </section>
+
+          <section class="panel section-view hidden" id="section-bookings">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Website</p>
+                <h1>Buchungen</h1>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Name</th>
+                    <th>Zeitraum</th>
+                    <th>Wunschplatz</th>
+                    <th>Preis</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="bookings-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel section-view hidden" id="section-prices">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Synchron</p>
+                <h1>Preise</h1>
+              </div>
+              <div class="inline-actions">
+                <button id="add-price" class="secondary" type="button">Preis hinzufügen</button>
+                <button id="save-prices" type="button">Preise speichern</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Bezeichnung</th>
+                    <th>Betrag</th>
+                    <th>Kategorie</th>
+                    <th>Einheit</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="prices-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel section-view hidden" id="section-pitches">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Lageplan</p>
+                <h1>Stellplätze</h1>
+              </div>
+              <div class="inline-actions">
+                <button id="add-pitch" class="secondary" type="button">Stellplatz hinzufügen</button>
+                <button id="save-pitches" type="button">Stellplätze speichern</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Zone</th>
+                    <th>Zonenname</th>
+                    <th>Nummer</th>
+                    <th>Status</th>
+                    <th>Aktiv</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="pitches-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel section-view hidden" id="section-pages">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Edit-Modus</p>
+                <h1>Website-Inhalte</h1>
+              </div>
+            </div>
+            <div class="editor-layout">
+              <div class="editor-sidebar">
+                <label>
+                  <span>Seite auswählen</span>
+                  <select id="page-selector"></select>
+                </label>
+                <label>
+                  <span>Bild hochladen</span>
+                  <input id="image-upload" type="file" accept="image/*" />
+                </label>
+                <p class="status" id="upload-status"></p>
+                <button id="reload-page" class="secondary" type="button">Neu laden</button>
+                <button id="save-page" type="button">Seite speichern</button>
+              </div>
+              <div class="editor-main">
+                <textarea id="page-editor" spellcheck="false"></textarea>
+                <p class="status" id="page-status"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel section-view hidden" id="section-settings">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Steuerung</p>
+                <h1>Einstellungen</h1>
+              </div>
+            </div>
+            <form class="stack" id="settings-form">
+              <div class="grid-two">
+                <label><span>Website-Name</span><input type="text" name="siteName" /></label>
+                <label><span>Telefon</span><input type="text" name="bookingPhone" /></label>
+                <label><span>Buchungs-E-Mail</span><input type="email" name="bookingRecipientEmail" /></label>
+                <label><span>SMTP Host</span><input type="text" name="smtpHost" /></label>
+                <label><span>SMTP Port</span><input type="number" name="smtpPort" /></label>
+                <label><span>SMTP Benutzer</span><input type="text" name="smtpUser" /></label>
+                <label><span>SMTP Passwort</span><input type="password" name="smtpPass" /></label>
+                <label><span>Absender E-Mail</span><input type="email" name="smtpFromEmail" /></label>
+                <label><span>Absender Name</span><input type="text" name="smtpFromName" /></label>
+                <label class="checkbox-line">
+                  <input type="checkbox" name="smtpSecure" />
+                  <span>SMTP SSL / Secure aktiv</span>
+                </label>
+              </div>
+              <button type="submit">Einstellungen speichern</button>
+              <p class="status" id="settings-status"></p>
+            </form>
+          </section>
+
+          <section class="panel section-view hidden" id="section-users">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Zugriff</p>
+                <h1>Benutzer</h1>
+              </div>
+            </div>
+            <form class="stack" id="user-form">
+              <div class="grid-two">
+                <label><span>E-Mail</span><input type="email" name="email" required /></label>
+                <label><span>Passwort</span><input type="password" name="password" required /></label>
+                <label>
+                  <span>Rolle</span>
+                  <select name="role">
+                    <option value="admin">Admin</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Benutzer anlegen</button>
+              <p class="status" id="user-status"></p>
+            </form>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>E-Mail</th>
+                    <th>Rolle</th>
+                    <th>Angelegt</th>
+                  </tr>
+                </thead>
+                <tbody id="users-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <script src="/admin/app.js" defer></script>
+  </body>
+</html>

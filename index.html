@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hiasen Hof am Thiersee</title>
+    <meta
+      name="description"
+      content="Camping am Thiersee mit klaren Infos zu Campingplatz, Aktivitäten, Preisen, Buchung und Anreise."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" type="image/png" href="./assets/HiasenHofLogo.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="brand" href="./index.html" aria-label="Hiasen Hof Startseite">
+          <img class="brand-logo" src="./assets/HiasenHofLogo.png" alt="Hiasen Hof Logo" />
+          <span class="brand-copy">
+            <strong>Hiasen Hof</strong>
+            <span>Camping am Thiersee</span>
+          </span>
+        </a>
+
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+          Menü
+        </button>
+
+        <nav class="site-nav" id="site-nav" aria-label="Hauptnavigation">
+          <a class="is-active" href="./index.html">Start</a>
+          <a href="./campingplatz.html">Campingplatz</a>
+          <a href="./erlebnisse.html">Aktivitäten</a>
+          <a href="./preise.html">Preise</a>
+          <a href="./buchen.html">Buchen</a>
+          <a href="./anreise.html">Anreise</a>
+          <a class="nav-cta" href="./buchen.html">Jetzt anfragen</a>
+        </nav>
+      </header>
+
+      <main id="top">
+        <section class="hero-home">
+          <div class="hero-backdrop"></div>
+          <div class="hero-home-inner">
+            <div class="hero-home-copy">
+              <p class="eyebrow">Familiengeführt. Direkt am See. Ganzjährig offen.</p>
+              <h1>Camping am Thiersee</h1>
+              <p>
+                Direkter Zugang zum See, familiengeführter Platz in Thiersee und alle
+                wichtigen Infos jetzt klar auf eigenen Seiten geordnet.
+              </p>
+
+              <div class="hero-actions">
+                <a class="button button-primary" href="./buchen.html">Buchungsanfrage starten</a>
+                <a class="button button-secondary" href="./erlebnisse.html">Aktivitäten ansehen</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section intro-band">
+          <div class="section-heading compact">
+            <p class="eyebrow">Schneller Einstieg</p>
+            <h2>Die wichtigsten Bereiche auf einen Blick</h2>
+            <p>
+              Alle wichtigen Themen sind hier kurz gebündelt, damit Gäste schnell zur passenden
+              Seite für Aufenthalt, Preise, Anfrage und Anreise finden.
+            </p>
+          </div>
+          <div class="overview-grid">
+            <article class="overview-card">
+              <h3>Campingplatz</h3>
+              <p>Ausstattung, Seezugang, Kantine, Regeln und alle praktischen Hinweise zum Aufenthalt.</p>
+              <a class="button button-secondary" href="./campingplatz.html">Zur Seite</a>
+            </article>
+            <article class="overview-card">
+              <h3>Aktivitäten</h3>
+              <p>Sommer und Winter sowie Ausflugsziele, Kultur, Freizeitparks und Sport in der Umgebung.</p>
+              <a class="button button-secondary" href="./erlebnisse.html">Zur Seite</a>
+            </article>
+            <article class="overview-card">
+              <h3>Preise</h3>
+              <p>Alle Tagespreise kompakt in einer sauber lesbaren Übersicht.</p>
+              <a class="button button-secondary" href="./preise.html">Zur Preisliste</a>
+            </article>
+            <article class="overview-card">
+              <h3>Buchen</h3>
+              <p>Formular ausfüllen und Wunschstellplatz direkt mit der Anfrage übermitteln.</p>
+              <a class="button button-secondary" href="./buchen.html">Zur Anfrage</a>
+            </article>
+            <article class="overview-card">
+              <h3>Anreise</h3>
+              <p>Adresse, Karte und Anfahrtsbeschreibung getrennt auf einer eigenen Seite.</p>
+              <a class="button button-secondary" href="./anreise.html">Zur Anreise</a>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="footer-brand">
+          <img class="footer-logo" src="./assets/HiasenHofLogo.png" alt="Hiasen Hof Logo" />
+          <div>
+            <p class="eyebrow">Kontakt</p>
+            <h2>Hiasen Hof - Thiersee</h2>
+            <p>Daniel Kaindl, Seebauern 2, A-6335 Thiersee</p>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="tel:+4366488530524">+43 664 885 305 24</a>
+          <a href="mailto:info@hiasenhof-thiersee.at">info@hiasenhof-thiersee.at</a>
+          <a href="./campingplatz.html">Campingplatz</a>
+          <a href="./erlebnisse.html">Aktivitäten</a>
+          <a href="./preise.html">Preise</a>
+          <a href="./buchen.html">Buchen</a>
+          <a href="./anreise.html">Anreise</a>
+          <a href="./impressum.html">Impressum</a>
+        </div>
+        <p class="footer-note">Hiasen Hof am Thiersee. <span id="year"></span></p>
+      </footer>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
