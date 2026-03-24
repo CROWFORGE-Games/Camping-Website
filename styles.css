@@ -1343,10 +1343,14 @@ a {
   width: 100%;
 }
 
-.pitch-detail-map.is-zone-wiese1 .pitch-detail-canvas,
+.pitch-detail-map.is-zone-wiese1 .pitch-detail-canvas {
+  width: 80%;
+  margin-inline: auto;
+}
+
 .pitch-detail-map.is-zone-wiese2 .pitch-detail-canvas,
 .pitch-detail-map.is-zone-wiese3 .pitch-detail-canvas {
-  width: 80%;
+  width: 64%;
   margin-inline: auto;
 }
 

@@ -476,6 +476,9 @@ const normalizePitchZone = (value) => {
 const parsePitchStatusFromSheet = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
 
+  if (!normalized) {
+    return "free";
+  }
   if (normalized === "0" || normalized === "frei" || normalized === "free") {
     return "free";
   }
@@ -489,7 +492,21 @@ const parsePitchStatusFromSheet = (status) => {
   return null;
 };
 
+const zoneLabelForZone = (zone) => {
+  const map = {
+    wiese1: "Wiese 1",
+    wiese2: "Wiese 2",
+    wiese3: "Wiese 3",
+    see: "Seeplatz",
+  };
+
+  return map[String(zone || "").trim()] || String(zone || "Stellplatz").trim();
+};
+
 const mergePitchesWithSheetRows = (pitches, rows) => {
+  const existingPitches = new Map(
+    pitches.map((pitch) => [`${normalizePitchZone(pitch.zone || pitch.zoneLabel)}:${Number(pitch.number || 0)}`, pitch]),
+  );
   const rowMap = new Map();
 
   (Array.isArray(rows) ? rows : []).forEach((row) => {
@@ -501,12 +518,30 @@ const mergePitchesWithSheetRows = (pitches, rows) => {
       return;
     }
 
-    rowMap.set(`${zone}:${number}`, status);
+    const key = `${zone}:${number}`;
+    const existing = existingPitches.get(key);
+    rowMap.set(key, {
+      ...(existing || {
+        id: `${zone}-${number}`,
+        zone,
+        zoneLabel: zoneLabelForZone(zone),
+        number,
+        active: true,
+      }),
+      zone,
+      zoneLabel: existing?.zoneLabel || zoneLabelForZone(zone),
+      number,
+      status,
+      active: true,
+    });
   });
 
-  return pitches.map((pitch) => {
-    const mergedStatus = rowMap.get(`${normalizePitchZone(pitch.zone || pitch.zoneLabel)}:${Number(pitch.number || 0)}`);
-    return mergedStatus ? { ...pitch, status: mergedStatus } : pitch;
+  return Array.from(rowMap.values()).sort((a, b) => {
+    if (a.zone === b.zone) {
+      return Number(a.number || 0) - Number(b.number || 0);
+    }
+
+    return String(a.zone || "").localeCompare(String(b.zone || ""), "de");
   });
 };
 

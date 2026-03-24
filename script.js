@@ -264,6 +264,60 @@ const groupedPitches = () => {
   return groups;
 };
 
+const getDefaultTemplatePointPosition = (index) => {
+  const positions = [
+    { left: "50%", top: "50%" },
+    { left: "42%", top: "50%" },
+    { left: "58%", top: "50%" },
+    { left: "50%", top: "40%" },
+    { left: "50%", top: "60%" },
+    { left: "42%", top: "40%" },
+    { left: "58%", top: "40%" },
+    { left: "42%", top: "60%" },
+    { left: "58%", top: "60%" },
+  ];
+
+  return positions[index] || { left: "50%", top: "50%" };
+};
+
+const createTemplatePitchPoint = (number, position) => {
+  const point = document.createElement("button");
+  point.type = "button";
+  point.className = "pitch-point";
+  point.dataset.pitchNumber = String(number);
+  point.style.left = position.left;
+  point.style.top = position.top;
+  point.textContent = String(number);
+  return point;
+};
+
+const reconcilePitchTemplateWithPitches = (zone, pitches) => {
+  const template = getPitchTemplate(zone);
+  const overlay = template?.content?.querySelector(".pitch-detail-overlay");
+
+  if (!template || !overlay) {
+    return;
+  }
+
+  const wantedNumbers = new Set(pitches.map((pitch) => String(pitch.number)));
+
+  overlay.querySelectorAll("[data-pitch-number]").forEach((point) => {
+    if (!wantedNumbers.has(String(point.dataset.pitchNumber || "").trim())) {
+      point.remove();
+    }
+  });
+
+  const existingNumbers = new Set(
+    Array.from(overlay.querySelectorAll("[data-pitch-number]")).map((point) => String(point.dataset.pitchNumber || "").trim()),
+  );
+
+  pitches
+    .filter((pitch) => !existingNumbers.has(String(pitch.number)))
+    .forEach((pitch, index) => {
+      overlay.appendChild(createTemplatePitchPoint(pitch.number, getDefaultTemplatePointPosition(index)));
+    });
+};
+
 const calculateNights = (arrivalValue, departureValue) => {
   if (!arrivalValue || !departureValue) {
     return 0;
@@ -682,6 +736,7 @@ const openPitchDetail = (zone, isReadonly) => {
   const pitches = groups.get(zone) || [];
   const pitchByNumber = new Map(pitches.map((pitch) => [String(pitch.number), pitch]));
   const zoneMeta = normalizedZoneMeta[zone] || zoneDetailMeta[zone];
+  reconcilePitchTemplateWithPitches(zone, pitches);
   const template = getPitchTemplate(zone);
   const templateHasContent = Boolean(template?.content?.querySelector("[data-pitch-number]"));
 
@@ -1887,9 +1942,11 @@ const init = async () => {
   await refreshPublicData();
   closePitchDetail();
   zoneDetailTriggers.forEach((trigger) => {
-    trigger.addEventListener("click", async () => {
-      await refreshPublicData();
-      openPitchDetail(trigger.dataset.zoneDetailTrigger, trigger.dataset.zoneReadonly === "true");
+    trigger.addEventListener("click", () => {
+      const zone = trigger.dataset.zoneDetailTrigger;
+      const isReadonly = trigger.dataset.zoneReadonly === "true";
+      openPitchDetail(zone, isReadonly);
+      refreshPublicData().catch(() => {});
     });
   });
 
