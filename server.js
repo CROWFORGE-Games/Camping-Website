@@ -512,9 +512,10 @@ const mergePitchesWithSheetRows = (pitches, rows) => {
 
 const resolvePitchesWithRemoteStatus = async (pitches) => {
   const config = appsScriptConfig();
+  const freeFallback = pitches.map((pitch) => ({ ...pitch, status: "free" }));
 
   if (!config.enabled) {
-    return pitches;
+    return freeFallback;
   }
 
   try {
@@ -522,10 +523,14 @@ const resolvePitchesWithRemoteStatus = async (pitches) => {
       sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
     });
 
-    return mergePitchesWithSheetRows(pitches, data?.rows || []);
+    if (!Array.isArray(data?.rows) || data.rows.length === 0) {
+      return freeFallback;
+    }
+
+    return mergePitchesWithSheetRows(freeFallback, data.rows);
   } catch (error) {
     console.error("Spots konnten nicht aus Google Sheets gelesen werden.", error);
-    return pitches;
+    return freeFallback;
   }
 };
 

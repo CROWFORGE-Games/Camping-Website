@@ -80,6 +80,8 @@ defaultBootstrap.pitches = seedPitches();
 let bootstrapData = structuredClone(defaultBootstrap);
 let selectedBookingPitch = null;
 let activeDetailZone = null;
+let activeDetailReadonly = false;
+let liveRefreshTimer = null;
 
 const formatCurrency = (value) => currencyFormatter.format(value);
 const findPrice = (key) => Number(bootstrapData.prices.find((price) => price.key === key).amount || 0);
@@ -528,7 +530,7 @@ const renderSitePlan = () => {
       freeCountLabel.classList.remove("is-good", "is-low", "is-full");
       if (freeCount === 0) {
         freeCountLabel.classList.add("is-full");
-      } else if (pitches.length > 0 && freeCount / pitches.length <= 0.2) {
+      } else if (pitches.length > 0 && freeCount / pitches.length <= 0.4) {
         freeCountLabel.classList.add("is-low");
       } else {
         freeCountLabel.classList.add("is-good");
@@ -548,12 +550,16 @@ const renderSitePlan = () => {
 const createPitchButton = (pitch, isReadonly) => {
   const button = document.createElement("button");
   const pitchLabel = formatPitchLabel(pitch.zone, pitch.number);
+  const statusLabel =
+    pitch.status === "reserved" ? "Reserviert" : pitch.status === "occupied" ? "Besetzt" : "Frei";
 
   button.type = "button";
   button.className = `pitch-button is-${pitch.status}`;
   button.textContent = String(pitch.number);
   button.dataset.pitchLabel = pitchLabel;
   button.dataset.status = pitch.status;
+  button.title = statusLabel;
+  button.setAttribute("aria-label", `${pitchLabel} - ${statusLabel}`);
   button.setAttribute("aria-pressed", "false");
 
   if (selectedBookingPitch?.dataset?.pitchLabel === pitchLabel) {
@@ -661,6 +667,7 @@ const closePitchDetail = () => {
   }
 
   activeDetailZone = null;
+  activeDetailReadonly = false;
   pitchDetailModal.hidden = true;
   document.body.style.overflow = "";
   updatePitchDetailEditorUi();
@@ -679,11 +686,12 @@ const openPitchDetail = (zone, isReadonly) => {
   const templateHasContent = Boolean(template?.content?.querySelector("[data-pitch-number]"));
 
   activeDetailZone = zone;
+  activeDetailReadonly = isReadonly;
   pitchDetailModal.hidden = false;
   document.body.style.overflow = "hidden";
   pitchDetailTitle.textContent = zoneMeta.title || "Stellplätze";
   pitchDetailSubtitle.textContent = zoneMeta.subtitle || "Bereich";
-  pitchDetailMap.className = "pitch-detail-map";
+  pitchDetailMap.className = `pitch-detail-map is-zone-${zone}`;
   pitchDetailMap.innerHTML = "";
 
   const note = document.createElement("p");
@@ -764,6 +772,19 @@ const loadBootstrap = async () => {
     };
   } catch (_error) {
     bootstrapData = structuredClone(defaultBootstrap);
+  }
+};
+
+const refreshPublicData = async () => {
+  await loadBootstrap();
+  updateContactLinks();
+  renderSitePlan();
+  renderPricingTable();
+  renderBookingPitchOptions();
+  updateBookingEstimate();
+
+  if (activeDetailZone && pitchDetailModal && !pitchDetailModal.hidden) {
+    openPitchDetail(activeDetailZone, activeDetailReadonly);
   }
 };
 
@@ -1863,14 +1884,11 @@ if (navToggle && nav) {
 }
 
 const init = async () => {
-  await loadBootstrap();
+  await refreshPublicData();
   closePitchDetail();
-  updateContactLinks();
-  renderSitePlan();
-  renderPricingTable();
-  renderBookingPitchOptions();
   zoneDetailTriggers.forEach((trigger) => {
-    trigger.addEventListener("click", () => {
+    trigger.addEventListener("click", async () => {
+      await refreshPublicData();
       openPitchDetail(trigger.dataset.zoneDetailTrigger, trigger.dataset.zoneReadonly === "true");
     });
   });
@@ -1882,6 +1900,27 @@ const init = async () => {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !pitchDetailModal.hidden) {
       closePitchDetail();
+    }
+  });
+
+  const runLiveRefresh = async () => {
+    if (document.visibilityState === "hidden") {
+      return;
+    }
+    await refreshPublicData();
+  };
+
+  if (liveRefreshTimer) {
+    window.clearInterval(liveRefreshTimer);
+  }
+
+  liveRefreshTimer = window.setInterval(() => {
+    runLiveRefresh().catch(() => {});
+  }, 3000);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      runLiveRefresh().catch(() => {});
     }
   });
 
