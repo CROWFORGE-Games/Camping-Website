@@ -26,6 +26,15 @@ const currencyFormatter = new Intl.NumberFormat("de-AT", {
   style: "currency",
   currency: "EUR",
 });
+const displayDateTimeFormatter = new Intl.DateTimeFormat("de-AT", {
+  timeZone: "Europe/Vienna",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 const defaultBootstrap = {
   settings: {
@@ -94,6 +103,30 @@ const escapeHtml = (value) =>
     .replace(/'/g, "&#39;");
 
 const toTelHref = (value) => `tel:${String(value || "").replace(/[^\d+]/g, "")}`;
+const formatDateTimeDisplay = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(value.trim())) {
+    return value.trim();
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  const parts = Object.fromEntries(
+    displayDateTimeFormatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+};
 
 const zoneDetailMeta = {
   wiese1: {
@@ -1533,7 +1566,7 @@ const renderContactRequests = () => {
           <div class="site-contact-request-meta">
             <a href="mailto:${escapeHtml(entry.email || "")}">${escapeHtml(entry.email || "-")}</a>
             <span>${escapeHtml(entry.phone || "Keine Telefonnummer")}</span>
-            <span>${new Date(entry.createdAt).toLocaleString("de-AT")}</span>
+            <span>${escapeHtml(formatDateTimeDisplay(entry.createdAt))}</span>
           </div>
           <p class="site-contact-request-message">${escapeHtml(entry.message || "")}</p>
           <div class="site-contact-request-actions">
@@ -1621,9 +1654,11 @@ document.addEventListener("pointerup", () => {
 
 const initPublicEditor = async () => {
   initPublicEditorShell();
+  document.querySelector(".site-editor").hidden = false;
   const toggle = document.querySelector("#site-editor-toggle");
   const panel = document.querySelector("#site-editor-panel");
   const loginForm = document.querySelector("#site-editor-login");
+  const loginSubmitButton = loginForm?.querySelector('button[type="submit"]');
   const loginStatus = document.querySelector("#site-editor-login-status");
   const actions = document.querySelector("#site-editor-actions");
   const enableButton = document.querySelector("#site-editor-enable");
@@ -1644,6 +1679,20 @@ const initPublicEditor = async () => {
   const newPasswordInput = document.querySelector("#site-settings-new-password");
   const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
   const changePasswordButton = document.querySelector("#site-settings-change-password");
+
+  const setButtonLoading = (button, isLoading) => {
+    if (!button) {
+      return;
+    }
+
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.textContent.trim();
+    }
+
+    button.disabled = isLoading;
+    button.dataset.loading = isLoading ? "true" : "false";
+    button.textContent = isLoading ? `${button.dataset.defaultLabel}...` : button.dataset.defaultLabel;
+  };
 
   const clearPasswordInputs = () => {
     if (currentPasswordInput) {
@@ -1791,6 +1840,7 @@ const initPublicEditor = async () => {
     event.preventDefault();
     loginStatus.textContent = "";
     const formData = new FormData(loginForm);
+    setButtonLoading(loginSubmitButton, true);
     try {
       editorState.session = await publicApi("/api/auth/login", {
         method: "POST",
@@ -1803,6 +1853,8 @@ const initPublicEditor = async () => {
       updateEditorAuthUi();
     } catch (error) {
       loginStatus.textContent = error.message;
+    } finally {
+      setButtonLoading(loginSubmitButton, false);
     }
   });
 
@@ -1812,10 +1864,8 @@ const initPublicEditor = async () => {
     if (session.user) {
       await loadAdminBootstrap();
     }
-    document.querySelector(".site-editor").hidden = false;
     updateEditorAuthUi();
   } catch (error) {
-    document.querySelector(".site-editor").hidden = false;
     editorState.session = null;
     updateEditorAuthUi();
     loginStatus.textContent = error.message;
@@ -1842,9 +1892,14 @@ const initPublicEditor = async () => {
   });
 
   contactRequestsButton.addEventListener("click", async () => {
-    await loadAdminBootstrap();
-    renderContactRequests();
-    contactRequestsModal.hidden = false;
+    setButtonLoading(contactRequestsButton, true);
+    try {
+      await loadAdminBootstrap();
+      renderContactRequests();
+      contactRequestsModal.hidden = false;
+    } finally {
+      setButtonLoading(contactRequestsButton, false);
+    }
   });
 
   settingsButton.addEventListener("click", () => {
@@ -1939,6 +1994,12 @@ if (navToggle && nav) {
 }
 
 const init = async () => {
+  try {
+    await initPublicEditor();
+  } catch (_error) {
+    // Keep public interactions usable even when the editor backend is unavailable.
+  }
+
   await refreshPublicData();
   closePitchDetail();
   zoneDetailTriggers.forEach((trigger) => {
@@ -1981,14 +2042,18 @@ const init = async () => {
     }
   });
 
-  try {
-    await initPublicEditor();
-  } catch (_error) {
-    // Keep public interactions usable even when the editor backend is unavailable.
-  }
-
   if (bookingForm && formStatus) {
     const childrenAgeInput = bookingForm.querySelector('input[name="childrenAge"]');
+    const bookingSubmitButton = bookingForm.querySelector('button[type="submit"]');
+
+    const resetBookingSubmitButton = () => {
+      if (!bookingSubmitButton) {
+        return;
+      }
+      bookingSubmitButton.textContent = "Anfrage senden";
+      bookingSubmitButton.classList.remove("is-success");
+    };
+
     childrenAgeInput.addEventListener("blur", () => {
       const normalized = normalizeChildAges(childrenAgeInput.value);
       if (normalized) {
@@ -1997,10 +2062,12 @@ const init = async () => {
     });
 
     bookingForm.addEventListener("input", () => {
+      resetBookingSubmitButton();
       updateBookingEstimate();
     });
 
     bookingForm.addEventListener("change", () => {
+      resetBookingSubmitButton();
       updateBookingEstimate();
     });
 
@@ -2011,6 +2078,7 @@ const init = async () => {
 
       const data = new FormData(bookingForm);
       const pitchTypes = data.getAll("pitch");
+      const children = Number(data.get("children") || 0);
       const requiredValues = [
         data.get("name"),
         data.get("street"),
@@ -2022,8 +2090,6 @@ const init = async () => {
         data.get("departure"),
         data.get("adults"),
         data.get("children"),
-        data.get("childrenAge"),
-        data.get("message"),
       ];
 
       const hasMissingField = requiredValues.some((value) => !String(value || "").trim());
@@ -2035,6 +2101,11 @@ const init = async () => {
 
       if (pitchTypes.length === 0) {
         formStatus.textContent = "Bitte mindestens eine Platzart auswählen.";
+        return;
+      }
+
+      if (children > 0 && !String(data.get("childrenAge") || "").trim()) {
+        formStatus.textContent = "Bitte das Alter der Kinder angeben.";
         return;
       }
 
@@ -2054,6 +2125,10 @@ const init = async () => {
           button.setAttribute("aria-pressed", "false");
         });
         updateBookingEstimate();
+        if (bookingSubmitButton) {
+          bookingSubmitButton.textContent = "Anfrage gesendet";
+          bookingSubmitButton.classList.add("is-success");
+        }
         formStatus.textContent = "Die Anfrage wurde erfolgreich gespeichert.";
       } catch (error) {
         formStatus.textContent = error.message;

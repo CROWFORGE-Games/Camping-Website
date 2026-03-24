@@ -394,6 +394,12 @@ a {
   box-shadow: 0 16px 36px rgba(212, 123, 83, 0.2);
 }
 
+.button.is-success {
+  background: linear-gradient(135deg, #2f8a48, #58b06e);
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(47, 138, 72, 0.24);
+}
+
 .button-secondary {
   border-color: rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.08);
@@ -1509,6 +1515,33 @@ label:has(select[required]) > span::after,
 .site-editor-login button,
 .site-editor-actions button {
   padding: 0.8rem 1rem;
+}
+
+.site-editor-login button[data-loading="true"],
+.site-editor-actions button[data-loading="true"] {
+  position: relative;
+  opacity: 0.92;
+  cursor: wait;
+}
+
+.site-editor-login button[data-loading="true"]::after,
+.site-editor-actions button[data-loading="true"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-left: 0.55rem;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  vertical-align: -0.15rem;
+  animation: site-editor-spin 0.8s linear infinite;
+}
+
+@keyframes site-editor-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .site-editor-modal[hidden] {

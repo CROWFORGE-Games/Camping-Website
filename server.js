@@ -49,6 +49,41 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
 const SESSION_COOKIE_SECURE = parseBooleanEnv(process.env.SESSION_COOKIE_SECURE, false);
+const DISPLAY_TIME_ZONE = "Europe/Vienna";
+const displayDateTimeFormatter = new Intl.DateTimeFormat("de-AT", {
+  timeZone: DISPLAY_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const formatDateTimeForDisplay = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(value.trim())) {
+    return value.trim();
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  const parts = Object.fromEntries(
+    displayDateTimeFormatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+};
 
 const PUBLIC_HTML_FILES = [
   "index.html",
@@ -611,7 +646,7 @@ const syncBookingsToGoogleSheets = async (booking) => {
     "ID",
   ];
   const row = [
-    booking.createdAt,
+    formatDateTimeForDisplay(booking.createdAt),
     booking.status,
     booking.name,
     booking.email,
@@ -639,7 +674,7 @@ const syncBookingsToGoogleSheets = async (booking) => {
 const syncContactRequestToGoogleSheets = async (contactRequest) => {
   const headers = ["Erstellt am", "Status", "Name", "E-Mail", "Telefon", "Betreff", "Nachricht", "ID"];
   const row = [
-    contactRequest.createdAt,
+    formatDateTimeForDisplay(contactRequest.createdAt),
     contactRequest.status,
     contactRequest.name,
     contactRequest.email,
@@ -673,7 +708,7 @@ const syncBookingToAppsScript = async (booking) => {
     sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
     row: {
       inquiryType: "Campinganfrage",
-      createdAt: booking.createdAt,
+      createdAt: formatDateTimeForDisplay(booking.createdAt),
       status: booking.status,
       name: booking.name,
       email: booking.email,
@@ -702,7 +737,7 @@ const syncContactRequestToAppsScript = async (contactRequest) => {
     sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
     row: {
       inquiryType: "Kontaktanfrage",
-      createdAt: contactRequest.createdAt,
+      createdAt: formatDateTimeForDisplay(contactRequest.createdAt),
       status: contactRequest.status,
       name: contactRequest.name,
       email: contactRequest.email,
@@ -935,7 +970,7 @@ const sendBookingEmailViaResend = async (booking) => {
       "",
       `Zusätzliche Informationen: ${booking.message || "-"}`,
       "",
-      `Erstellt: ${booking.createdAt}`,
+      `Erstellt: ${formatDateTimeForDisplay(booking.createdAt)}`,
     ].join("\n"),
     replyTo: booking.email || undefined,
   });
@@ -956,7 +991,7 @@ const sendContactEmailViaResend = async (contactRequest) => {
       "",
       `Nachricht: ${contactRequest.message || "-"}`,
       "",
-      `Erstellt: ${contactRequest.createdAt}`,
+      `Erstellt: ${formatDateTimeForDisplay(contactRequest.createdAt)}`,
     ].join("\n"),
     replyTo: contactRequest.email || undefined,
   });
@@ -1010,7 +1045,7 @@ const sendBookingEmail = async (booking) => {
       "",
       `Zusätzliche Informationen: ${booking.message || "-"}`,
       "",
-      `Erstellt: ${booking.createdAt}`,
+      `Erstellt: ${formatDateTimeForDisplay(booking.createdAt)}`,
     ].join("\n"),
   });
 
