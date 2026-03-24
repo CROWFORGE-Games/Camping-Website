@@ -5,12 +5,27 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
-const nodemailer = require("nodemailer");
 const webPush = require("web-push");
 
 const ROOT_DIR = __dirname;
-const DATA_DIR = path.join(ROOT_DIR, "data");
-const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
+const parseBooleanEnv = (value, fallback = false) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+};
+
+const resolveStoragePath = (value, fallbackFolder) => {
+  if (!value) {
+    return path.join(ROOT_DIR, fallbackFolder);
+  }
+
+  return path.resolve(String(value));
+};
+
+const DATA_DIR = resolveStoragePath(process.env.DATA_DIR, "data");
+const UPLOADS_DIR = resolveStoragePath(process.env.UPLOADS_DIR, "uploads");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
 
@@ -18,6 +33,19 @@ const PORT = Number(process.env.PORT || 3001);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@hiasenhof.local";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "change-me-now";
+const BOOKING_RECIPIENT_EMAIL =
+  process.env.BOOKING_RECIPIENT_EMAIL || "info@hiasenhof-thiersee.at";
+const BOOKING_PHONE = process.env.BOOKING_PHONE || "+43 664 885 305 24";
+const GOOGLE_APPS_SCRIPT_ENABLED = parseBooleanEnv(process.env.GOOGLE_APPS_SCRIPT_ENABLED, false);
+const GOOGLE_APPS_SCRIPT_WEBHOOK_URL = String(process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || "").trim();
+const GOOGLE_APPS_SCRIPT_TOKEN = String(process.env.GOOGLE_APPS_SCRIPT_TOKEN || "").trim();
+const GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET || "Buchungen").trim();
+const GOOGLE_APPS_SCRIPT_CONTACT_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_CONTACT_SHEET || "Anfragen").trim();
+const GOOGLE_APPS_SCRIPT_SPOTS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_SPOTS_SHEET || "Spots").trim();
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
+const SESSION_COOKIE_SECURE = parseBooleanEnv(process.env.SESSION_COOKIE_SECURE, false);
 
 const PUBLIC_HTML_FILES = [
   "index.html",
@@ -87,25 +115,17 @@ const defaultStore = () => ({
   users: [],
   settings: {
     siteName: "Hiasen Hof am Thiersee",
-    bookingRecipientEmail: "info@hiasenhof-thiersee.at",
-    bookingPhone: "+43 664 885 305 24",
-    smtp: {
-      host: "",
-      port: 587,
-      secure: false,
-      user: "",
-      pass: "",
-      fromEmail: "",
-      fromName: "Hiasen Hof Website",
-    },
+    bookingRecipientEmail: BOOKING_RECIPIENT_EMAIL,
+    bookingPhone: BOOKING_PHONE,
     vapid: {
-      publicKey: "",
-      privateKey: "",
+      publicKey: VAPID_PUBLIC_KEY,
+      privateKey: VAPID_PRIVATE_KEY,
     },
   },
   prices: defaultPrices(),
   pitches: defaultPitches(),
   bookings: [],
+  contactRequests: [],
   pushSubscriptions: [],
 });
 
@@ -132,10 +152,6 @@ const loadStore = () => {
       settings: {
         ...defaultStore().settings,
         ...(parsed.settings || {}),
-        smtp: {
-          ...defaultStore().settings.smtp,
-          ...((parsed.settings || {}).smtp || {}),
-        },
         vapid: {
           ...defaultStore().settings.vapid,
           ...((parsed.settings || {}).vapid || {}),
@@ -152,6 +168,415 @@ const loadStore = () => {
 
 const writeStore = (store) => {
   fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+};
+
+const appsScriptConfig = () => ({
+  enabled: GOOGLE_APPS_SCRIPT_ENABLED && Boolean(GOOGLE_APPS_SCRIPT_WEBHOOK_URL),
+  url: GOOGLE_APPS_SCRIPT_WEBHOOK_URL,
+  token: GOOGLE_APPS_SCRIPT_TOKEN,
+});
+
+const postToAppsScript = async (eventType, payload) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return;
+  }
+
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      token: config.token || "",
+      eventType,
+      payload,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error || `Apps Script Fehler: ${response.status} ${response.statusText}`);
+  }
+};
+
+const googleTokenCache = {
+  accessToken: "",
+  expiresAt: 0,
+};
+
+const base64UrlEncode = (value) =>
+  Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+const extractSpreadsheetId = (value) => {
+  const trimmed = String(value || "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : trimmed;
+};
+
+const sheetsConfig = () => ({
+  enabled:
+    GOOGLE_SHEETS_ENABLED &&
+    Boolean(extractSpreadsheetId(GOOGLE_SHEETS_SPREADSHEET_ID)) &&
+    Boolean(GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL) &&
+    Boolean(GOOGLE_SHEETS_PRIVATE_KEY),
+  spreadsheetId: extractSpreadsheetId(GOOGLE_SHEETS_SPREADSHEET_ID),
+  serviceAccountEmail: GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL,
+  privateKey: GOOGLE_SHEETS_PRIVATE_KEY,
+});
+
+const isMissingSheetError = (message) =>
+  /unable to parse range|not found|requested entity was not found/i.test(String(message || ""));
+
+const getGoogleSheetsAccessToken = async () => {
+  const config = sheetsConfig();
+
+  if (!config.enabled) {
+    return "";
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  if (googleTokenCache.accessToken && googleTokenCache.expiresAt - 60 > now) {
+    return googleTokenCache.accessToken;
+  }
+
+  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      iss: config.serviceAccountEmail,
+      scope: "https://www.googleapis.com/auth/spreadsheets",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: now + 3600,
+      iat: now,
+    }),
+  );
+  const unsignedToken = `${header}.${payload}`;
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(unsignedToken);
+  signer.end();
+  const signature = signer.sign(config.privateKey);
+  const assertion = `${unsignedToken}.${base64UrlEncode(signature)}`;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.access_token) {
+    throw new Error(data.error_description || data.error || "Google OAuth Token konnte nicht geladen werden.");
+  }
+
+  googleTokenCache.accessToken = data.access_token;
+  googleTokenCache.expiresAt = now + Number(data.expires_in || 3600);
+  return googleTokenCache.accessToken;
+};
+
+const googleSheetsRequest = async (pathname, options = {}) => {
+  const config = sheetsConfig();
+
+  if (!config.enabled) {
+    return null;
+  }
+
+  const accessToken = await getGoogleSheetsAccessToken();
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}${pathname}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMessage =
+      data.error?.message ||
+      data.error_description ||
+      `${response.status} ${response.statusText}`;
+    throw new Error(errorMessage);
+  }
+
+  return data;
+};
+
+const ensureSheetExists = async (sheetName) => {
+  if (!sheetsConfig().enabled) {
+    return;
+  }
+
+  try {
+    await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}`);
+  } catch (error) {
+    if (!isMissingSheetError(error.message)) {
+      throw error;
+    }
+
+    try {
+      await googleSheetsRequest(":batchUpdate", {
+        method: "POST",
+        body: JSON.stringify({
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: sheetName,
+                },
+              },
+            },
+          ],
+        }),
+      });
+    } catch (batchError) {
+      if (!/already exists/i.test(String(batchError.message || ""))) {
+        throw batchError;
+      }
+    }
+  }
+};
+
+const updateSheetHeader = async (sheetName, headers) => {
+  await ensureSheetExists(sheetName);
+  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}?valueInputOption=RAW`, {
+    method: "PUT",
+    body: JSON.stringify({
+      range: `${sheetName}!A1`,
+      majorDimension: "ROWS",
+      values: [headers],
+    }),
+  });
+};
+
+const appendSheetRow = async (sheetName, headers, row) => {
+  if (!sheetsConfig().enabled) {
+    return;
+  }
+
+  await updateSheetHeader(sheetName, headers);
+  await googleSheetsRequest(
+    `/values/${encodeURIComponent(`${sheetName}!A:Z`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        majorDimension: "ROWS",
+        values: [row],
+      }),
+    },
+  );
+};
+
+const clearAndReplaceSheet = async (sheetName, headers, rows) => {
+  if (!sheetsConfig().enabled) {
+    return;
+  }
+
+  await ensureSheetExists(sheetName);
+  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A:Z`)}:clear`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}?valueInputOption=RAW`, {
+    method: "PUT",
+    body: JSON.stringify({
+      range: `${sheetName}!A1`,
+      majorDimension: "ROWS",
+      values: [headers, ...rows],
+    }),
+  });
+};
+
+const formatPitchStatusForSheet = (status) => {
+  const map = {
+    free: "frei",
+    reserved: "reserviert",
+    occupied: "besetzt",
+  };
+
+  return map[String(status || "").trim()] || String(status || "").trim() || "frei";
+};
+
+const parsePreferredPitch = (value) => {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(.*?),\s*Stellplatz\s*(\d+)$/i);
+
+  if (!match) {
+    return {
+      label: raw,
+      number: "",
+    };
+  }
+
+  return {
+    label: match[1].trim(),
+    number: match[2].trim(),
+  };
+};
+
+const syncBookingsToGoogleSheets = async (booking) => {
+  const preferredPitch = parsePreferredPitch(booking.preferredPitch);
+  const headers = [
+    "Erstellt am",
+    "Status",
+    "Name",
+    "E-Mail",
+    "Telefon",
+    "Straße",
+    "PLZ / Ort",
+    "Land",
+    "Anreise",
+    "Abreise",
+    "Wunschstellplatz",
+    "Wunschstellplatzbereich",
+    "Wunschstellplatznummer",
+    "Platzwahl",
+    "Erwachsene",
+    "Kinder",
+    "Alter der Kinder",
+    "Geschätzter Gesamtpreis",
+    "Nachricht",
+    "ID",
+  ];
+  const row = [
+    booking.createdAt,
+    booking.status,
+    booking.name,
+    booking.email,
+    booking.phone,
+    booking.street,
+    booking.city,
+    booking.country,
+    booking.arrival,
+    booking.departure,
+    booking.preferredPitch,
+    preferredPitch.label,
+    preferredPitch.number,
+    Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "",
+    booking.adults,
+    booking.children,
+    booking.childrenAge,
+    booking.estimatedTotal,
+    booking.message,
+    booking.id,
+  ];
+
+  await appendSheetRow(GOOGLE_SHEETS_BOOKINGS_SHEET, headers, row);
+};
+
+const syncContactRequestToGoogleSheets = async (contactRequest) => {
+  const headers = ["Erstellt am", "Status", "Name", "E-Mail", "Telefon", "Betreff", "Nachricht", "ID"];
+  const row = [
+    contactRequest.createdAt,
+    contactRequest.status,
+    contactRequest.name,
+    contactRequest.email,
+    contactRequest.phone,
+    contactRequest.subject,
+    contactRequest.message,
+    contactRequest.id,
+  ];
+
+  await appendSheetRow(GOOGLE_SHEETS_CONTACT_SHEET, headers, row);
+};
+
+const syncPitchesToGoogleSheets = async (pitches) => {
+  const headers = ["Stellplatz", "Stellplatznummer", "Status"];
+  const rows = [...pitches]
+    .sort((a, b) => {
+      if (a.zoneLabel === b.zoneLabel) {
+        return Number(a.number || 0) - Number(b.number || 0);
+      }
+      return String(a.zoneLabel || "").localeCompare(String(b.zoneLabel || ""), "de");
+    })
+    .map((pitch) => [String(pitch.zoneLabel || pitch.zone || "Stellplatz"), Number(pitch.number || 0), formatPitchStatusForSheet(pitch.status)]);
+
+  await clearAndReplaceSheet(GOOGLE_SHEETS_SPOTS_SHEET, headers, rows);
+};
+
+const syncBookingToAppsScript = async (booking) => {
+  const preferredPitch = parsePreferredPitch(booking.preferredPitch);
+
+  await postToAppsScript("booking", {
+    sheetName: GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET,
+    row: {
+      createdAt: booking.createdAt,
+      status: booking.status,
+      name: booking.name,
+      email: booking.email,
+      phone: booking.phone,
+      street: booking.street,
+      city: booking.city,
+      country: booking.country,
+      arrival: booking.arrival,
+      departure: booking.departure,
+      preferredPitch: booking.preferredPitch,
+      preferredPitchZone: preferredPitch.label,
+      preferredPitchNumber: preferredPitch.number,
+      pitchTypes: Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "",
+      adults: booking.adults,
+      children: booking.children,
+      childrenAge: booking.childrenAge,
+      estimatedTotal: booking.estimatedTotal,
+      message: booking.message,
+      id: booking.id,
+    },
+  });
+};
+
+const syncContactRequestToAppsScript = async (contactRequest) => {
+  await postToAppsScript("contact", {
+    sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
+    row: {
+      createdAt: contactRequest.createdAt,
+      status: contactRequest.status,
+      name: contactRequest.name,
+      email: contactRequest.email,
+      phone: contactRequest.phone,
+      subject: contactRequest.subject,
+      message: contactRequest.message,
+      id: contactRequest.id,
+    },
+  });
+};
+
+const syncPitchesToAppsScript = async (pitches) => {
+  const rows = [...pitches]
+    .sort((a, b) => {
+      if (a.zoneLabel === b.zoneLabel) {
+        return Number(a.number || 0) - Number(b.number || 0);
+      }
+      return String(a.zoneLabel || "").localeCompare(String(b.zoneLabel || ""), "de");
+    })
+    .map((pitch) => ({
+      stellplatz: String(pitch.zoneLabel || pitch.zone || "Stellplatz"),
+      stellplatznummer: Number(pitch.number || 0),
+      status: formatPitchStatusForSheet(pitch.status),
+    }));
+
+  await postToAppsScript("spots", {
+    sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
+    rows,
+  });
 };
 
 const ensureAdminUser = async () => {
@@ -353,6 +778,10 @@ const uploadStorage = multer.diskStorage({
 const upload = multer({ storage: uploadStorage });
 const app = express();
 
+if (TRUST_PROXY > 0) {
+  app.set("trust proxy", TRUST_PROXY);
+}
+
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(
@@ -363,6 +792,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
+      secure: SESSION_COOKIE_SECURE,
       maxAge: 1000 * 60 * 60 * 12,
     },
   }),
@@ -412,13 +842,11 @@ app.post("/api/public/bookings", async (req, res) => {
   writeStore(store);
 
   try {
-    await sendBookingEmail(booking);
+    await syncBookingToAppsScript(booking);
   } catch (error) {
-    console.error("Buchungs-E-Mail konnte nicht gesendet werden.", error);
+    console.error("Google Sheets Sync für Buchung fehlgeschlagen.", error);
     res.status(500).json({
-      error:
-        error.message ||
-        "Die Anfrage wurde gespeichert, aber die E-Mail konnte nicht gesendet werden.",
+      error: "Die Anfrage wurde lokal gespeichert, aber nicht in Google Sheets geschrieben.",
     });
     return;
   }
@@ -432,36 +860,88 @@ app.post("/api/public/bookings", async (req, res) => {
   res.json({ ok: true, bookingId: booking.id });
 });
 
-app.use("/api/auth/login", (req, res, next) => {
-  if (req.method !== "POST") {
-    next();
-    return;
-  }
-
-  const normalizedEmail = String((req.body || {}).email || "").trim().toLowerCase();
-  const password = String((req.body || {}).password || "");
-
-  if (!["admin", "admin@hiasenhof.local"].includes(normalizedEmail) || password !== "admin") {
-    next();
-    return;
-  }
-
+const sendContactNotification = async (contactRequest) => {
   const store = loadStore();
-  const adminUser = store.users.find((entry) => entry.role === "admin") || store.users[0];
+  configureWebPush(store);
 
-  if (!adminUser) {
-    next();
+  const payload = JSON.stringify({
+    title: "Neue Kontaktanfrage",
+    body: `${contactRequest.name} · ${contactRequest.subject || "Allgemeine Anfrage"}`,
+    url: "/admin/",
+  });
+
+  const results = await Promise.allSettled(
+    store.pushSubscriptions.map((subscription) =>
+      webPush.sendNotification(subscription.subscription, payload),
+    ),
+  );
+
+  const validSubscriptions = store.pushSubscriptions.filter((subscription, index) => {
+    const result = results[index];
+
+    if (result.status === "fulfilled") {
+      return true;
+    }
+
+    const statusCode = result.reason && result.reason.statusCode;
+    return statusCode !== 404 && statusCode !== 410;
+  });
+
+  if (validSubscriptions.length !== store.pushSubscriptions.length) {
+    store.pushSubscriptions = validSubscriptions;
+    writeStore(store);
+  }
+};
+
+app.post("/api/public/contact", async (req, res) => {
+  const store = loadStore();
+  const contactRequest = {
+    id: crypto.randomUUID(),
+    status: "new",
+    createdAt: new Date().toISOString(),
+    name: String(req.body.name || "").trim(),
+    email: String(req.body.email || "").trim(),
+    phone: String(req.body.phone || "").trim(),
+    subject: String(req.body.subject || "").trim(),
+    message: String(req.body.message || "").trim(),
+  };
+
+  const missing = ["name", "email", "message"].filter((key) => !contactRequest[key]);
+
+  if (missing.length > 0) {
+    res.status(400).json({ error: "Bitte alle Pflichtfelder ausfüllen." });
     return;
   }
 
-  req.session.userId = adminUser.id;
-  res.json({ ok: true, user: { id: adminUser.id, email: adminUser.email, role: adminUser.role } });
+  store.contactRequests.unshift(contactRequest);
+  writeStore(store);
+
+  try {
+    await syncContactRequestToAppsScript(contactRequest);
+  } catch (error) {
+    console.error("Google Sheets Sync für Kontaktanfrage fehlgeschlagen.", error);
+    res.status(500).json({
+      error: "Die Nachricht wurde lokal gespeichert, aber nicht in Google Sheets geschrieben.",
+    });
+    return;
+  }
+
+  try {
+    await sendContactNotification(contactRequest);
+  } catch (error) {
+    console.error("Push-Benachrichtigung für Kontaktanfrage konnte nicht gesendet werden.", error);
+  }
+
+  res.json({ ok: true, contactRequestId: contactRequest.id });
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
+  const normalizedLogin = String(email || "").trim().toLowerCase();
   const store = loadStore();
-  const user = store.users.find((entry) => entry.email.toLowerCase() === String(email || "").toLowerCase());
+  const user =
+    store.users.find((entry) => entry.email.toLowerCase() === normalizedLogin) ||
+    (normalizedLogin === "admin" ? store.users.find((entry) => entry.role === "admin") || null : null);
 
   if (!user) {
     res.status(401).json({ error: "Ungültige Zugangsdaten." });
@@ -508,6 +988,7 @@ app.get("/api/admin/bootstrap", requireAuth, (_req, res) => {
     prices: store.prices,
     pitches: store.pitches,
     bookings: store.bookings,
+    contactRequests: store.contactRequests,
     users: store.users.map(({ passwordHash, ...user }) => user),
     editablePages: EDITABLE_FILES.map(({ slug, label, file }) => ({ slug, label, file })),
     vapidPublicKey: store.settings.vapid.publicKey,
@@ -521,10 +1002,6 @@ app.put("/api/admin/settings", requireAuth, (req, res) => {
   store.settings = {
     ...store.settings,
     ...incoming,
-    smtp: {
-      ...store.settings.smtp,
-      ...(incoming.smtp || {}),
-    },
     vapid: {
       ...store.settings.vapid,
       ...(incoming.vapid || {}),
@@ -533,6 +1010,45 @@ app.put("/api/admin/settings", requireAuth, (req, res) => {
 
   writeStore(store);
   res.json({ ok: true, settings: store.settings });
+});
+
+app.patch("/api/admin/account/password", requireAuth, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || "");
+  const newPassword = String(req.body.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: "Aktuelles Passwort und neues Passwort sind erforderlich." });
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    res.status(400).json({ error: "Das neue Passwort muss mindestens 6 Zeichen lang sein." });
+    return;
+  }
+
+  const store = loadStore();
+  const userIndex = store.users.findIndex((entry) => entry.id === req.user.id);
+
+  if (userIndex === -1) {
+    res.status(404).json({ error: "Benutzer nicht gefunden." });
+    return;
+  }
+
+  const isValid = await bcrypt.compare(currentPassword, store.users[userIndex].passwordHash);
+
+  if (!isValid) {
+    res.status(401).json({ error: "Das aktuelle Passwort ist nicht korrekt." });
+    return;
+  }
+
+  store.users[userIndex] = {
+    ...store.users[userIndex],
+    passwordHash: await bcrypt.hash(newPassword, 12),
+    updatedAt: new Date().toISOString(),
+  };
+
+  writeStore(store);
+  res.json({ ok: true });
 });
 
 app.put("/api/admin/prices", requireAuth, (req, res) => {
@@ -553,7 +1069,7 @@ app.put("/api/admin/prices", requireAuth, (req, res) => {
   res.json({ ok: true, prices: store.prices });
 });
 
-app.put("/api/admin/pitches", requireAuth, (req, res) => {
+app.put("/api/admin/pitches", requireAuth, async (req, res) => {
   const store = loadStore();
   const pitches = Array.isArray(req.body.pitches) ? req.body.pitches : [];
 
@@ -567,6 +1083,17 @@ app.put("/api/admin/pitches", requireAuth, (req, res) => {
   }));
 
   writeStore(store);
+
+  try {
+    await syncPitchesToAppsScript(store.pitches);
+  } catch (error) {
+    console.error("Google Sheets Sync für Stellplätze fehlgeschlagen.", error);
+    res.status(500).json({
+      error: "Die Stellplätze wurden lokal gespeichert, aber nicht in Google Sheets geschrieben.",
+    });
+    return;
+  }
+
   res.json({ ok: true, pitches: store.pitches });
 });
 
@@ -635,6 +1162,20 @@ app.patch("/api/admin/bookings/:id", requireAuth, (req, res) => {
   res.json({ ok: true, booking });
 });
 
+app.patch("/api/admin/contact-requests/:id", requireAuth, (req, res) => {
+  const store = loadStore();
+  const contactRequest = store.contactRequests.find((entry) => entry.id === req.params.id);
+
+  if (!contactRequest) {
+    res.status(404).json({ error: "Kontaktanfrage nicht gefunden." });
+    return;
+  }
+
+  contactRequest.status = String(req.body.status || contactRequest.status);
+  writeStore(store);
+  res.json({ ok: true, contactRequest });
+});
+
 app.post("/api/admin/upload-image", requireAuth, upload.single("image"), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "Kein Bild hochgeladen." });
@@ -698,6 +1239,13 @@ ensureDirectories();
 Promise.resolve()
   .then(ensureAdminUser)
   .then(ensureVapidKeys)
+  .then(async () => {
+    try {
+      await syncPitchesToAppsScript(loadStore().pitches);
+    } catch (error) {
+      console.error("Initialer Google Sheets Sync für Spots fehlgeschlagen.", error);
+    }
+  })
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Hiasenhof-Plattform läuft auf http://localhost:${PORT}`);

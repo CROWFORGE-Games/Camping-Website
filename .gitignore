@@ -4,3 +4,4 @@ uploads/
 .env
 npm-debug.log*
 .playwright-cli/
+deploy/google-cloud/cloudrun.env.generated.yaml

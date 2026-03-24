@@ -12,7 +12,7 @@ Diese Version erweitert die bisher statische Website um eine geschützte Admin-A
   - Stellplätze und Status
   - Buchungen
   - Website-Inhalte per Edit-Modus
-  - Empfänger-E-Mail und SMTP-Einstellungen
+  - Kontakt-E-Mail und Telefon
   - Benutzer
 - Web-Push-Grundlage für neue Buchungen
 - Website-Buchungen landen im Backend und können E-Mail + Push auslösen
@@ -52,7 +52,7 @@ Diese Standardwerte unbedingt direkt ändern.
 - `Preise`: synchron gepflegte Preisdaten für Website und Buchung
 - `Stellplätze`: Plätze hinzufügen, entfernen, aktivieren, Status ändern
 - `Website-Inhalte`: HTML-Seiten direkt bearbeiten
-- `Einstellungen`: Buchungs-E-Mail, Telefon, SMTP, Website-Name
+- `Einstellungen`: Kontakt-E-Mail, Telefon, Website-Name
 - `Benutzer`: weitere berechtigte Personen anlegen
 
 ### Öffentliche Website
@@ -76,19 +76,36 @@ Die Seitenbearbeitung funktioniert aktuell als geschützter HTML-Editor für:
 - `buchen.html`
 - `anreise.html`
 
-## Mail-Versand
+## Kontakt und Buchungen
 
-Für echten E-Mail-Versand müssen unter `Einstellungen` SMTP-Daten gesetzt werden:
+Buchungsanfragen und Kontaktanfragen werden intern gespeichert.
 
-- SMTP Host
-- SMTP Port
-- SMTP Benutzer
-- SMTP Passwort
-- Absender E-Mail
-- Absender Name
-- Buchungs-E-Mail
+Wichtig:
 
-Ohne SMTP werden Buchungen trotzdem gespeichert, aber nicht per E-Mail weitergeleitet.
+- keine SMTP-Konfiguration nötig
+- Anfragen landen im Backend
+- Kontaktanfragen sind in der Admin-Konsole sichtbar
+- Buchungen und Kontaktanfragen können optional Push-Benachrichtigungen auslösen
+
+## Google Apps Script
+
+Optional können Anfragen und Stellplätze zusätzlich über einen Google-Apps-Script-Web-App-Webhook in Google Sheets geschrieben werden.
+
+Benötigte Variablen:
+
+- `GOOGLE_APPS_SCRIPT_ENABLED=true`
+- `GOOGLE_APPS_SCRIPT_WEBHOOK_URL=...`
+- `GOOGLE_APPS_SCRIPT_TOKEN=...`
+- `GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET=Buchungen`
+- `GOOGLE_APPS_SCRIPT_CONTACT_SHEET=Anfragen`
+- `GOOGLE_APPS_SCRIPT_SPOTS_SHEET=Spots`
+
+Wichtig:
+
+- `Kontaktformular` schreibt in das Blatt `Anfragen`.
+- `Buchungen` schreiben in das Blatt `Buchungen`.
+- `Spots` wird mit `Stellplatz`, `Stellplatznummer` und `Status` synchron gehalten.
+- Das Token ist optional, aber empfohlen.
 
 ## Push-Benachrichtigungen
 
@@ -110,6 +127,16 @@ Vor echtem Live-Betrieb sollte noch ergänzt werden:
 4. Änderungsprotokoll für Inhalte und Preise
 5. Optional echte visuelle CMS-Blöcke statt rohem HTML
 6. Optional native Mobile-App oder PWA-Optimierung
+
+## Google Cloud
+
+Für Google Cloud ist jetzt eine vorbereitete Cloud-Run-Konfiguration vorhanden:
+
+- Anleitung: `deploy/google-cloud/README.md`
+- Beispiel-Variablen: `deploy/google-cloud/cloudrun.env.yaml.example`
+- Deploy-Skript: `deploy/google-cloud/deploy.ps1`
+
+Für diese App ist Cloud Run mit genau einer Instanz und einem gemounteten Cloud-Storage-Bucket vorgesehen, damit `data/store.json` und `uploads/` persistent bleiben.
 
 ## Datenablage
 

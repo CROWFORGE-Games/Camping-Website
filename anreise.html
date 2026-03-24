@@ -79,6 +79,34 @@
             </div>
           </div>
 
+          <article class="note-card contact-form-card">
+            <h3>Kontaktformular</h3>
+            <p>
+              Allgemeine Fragen können hier direkt übermittelt werden. Die Nachricht wird intern gespeichert
+              und ist in der Admin-Konsole sichtbar.
+            </p>
+
+            <form class="booking-form contact-form" id="contact-form">
+              <div class="form-grid">
+                <label><span>Name</span><input type="text" name="name" required /></label>
+                <label><span>E-Mail</span><input type="email" name="email" required /></label>
+                <label><span>Telefon</span><input type="tel" name="phone" /></label>
+                <label><span>Betreff</span><input type="text" name="subject" placeholder="Allgemeine Anfrage" /></label>
+              </div>
+
+              <label class="full-width">
+                <span>Nachricht</span>
+                <textarea name="message" rows="5" placeholder="Ihre Nachricht an den Hiasen Hof" required></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button class="button button-primary" type="submit">Nachricht senden</button>
+              </div>
+
+              <p class="form-status" id="contact-form-status" aria-live="polite"></p>
+            </form>
+          </article>
+
           <div class="map-frame">
             <iframe
               title="Karte Hiasen Hof"

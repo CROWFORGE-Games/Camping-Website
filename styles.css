@@ -1457,6 +1457,24 @@ label:has(select[required]) > span::after,
   gap: 0.8rem;
 }
 
+.site-editor-settings-section {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(22, 48, 57, 0.12);
+}
+
+.site-editor-settings-section h4 {
+  margin: 0;
+  color: var(--text);
+}
+
+.site-editor-settings-section button {
+  justify-self: start;
+  padding: 0.8rem 1rem;
+}
+
 .site-editor-login button,
 .site-editor-actions button {
   padding: 0.8rem 1rem;
@@ -1566,6 +1584,57 @@ label:has(select[required]) > span::after,
 
 .site-price-remove {
   padding: 0.7rem 0.9rem;
+}
+
+.site-contact-requests-list {
+  display: grid;
+  gap: 0.9rem;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.site-contact-request-card {
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(22, 48, 57, 0.05);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.site-contact-request-header,
+.site-contact-request-meta,
+.site-contact-request-actions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.site-contact-request-header p,
+.site-contact-request-message {
+  margin: 0;
+}
+
+.site-contact-request-meta {
+  justify-content: flex-start;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.site-contact-request-actions button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(22, 48, 57, 0.1);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.7rem 1rem;
+}
+
+.contact-form-card {
+  margin-top: 1.5rem;
 }
 
 .editor-target {

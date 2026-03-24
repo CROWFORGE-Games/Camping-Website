@@ -2,6 +2,8 @@ const navToggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector(".site-nav");
 const bookingForm = document.querySelector("#booking-form");
 const formStatus = document.querySelector("#form-status");
+const contactForm = document.querySelector("#contact-form");
+const contactFormStatus = document.querySelector("#contact-form-status");
 const year = document.querySelector("#year");
 const pitchSelectionStatus = document.querySelector("#pitch-selection-status");
 const preferredPitchInput = document.querySelector("#preferred-pitch");
@@ -30,15 +32,6 @@ const defaultBootstrap = {
     siteName: "Hiasen Hof am Thiersee",
     bookingPhone: "+43 664 885 305 24",
     bookingRecipientEmail: "info@hiasenhof-thiersee.at",
-    smtp: {
-      host: "",
-      port: 587,
-      secure: false,
-      user: "",
-      pass: "",
-      fromEmail: "",
-      fromName: "Hiasen Hof Website",
-    },
   },
   prices: [
     { key: "adult", label: "Erwachsener ab 15 Jahre", amount: 7.5, category: "person", unit: "night" },
@@ -90,6 +83,13 @@ let activeDetailZone = null;
 
 const formatCurrency = (value) => currencyFormatter.format(value);
 const findPrice = (key) => Number(bootstrapData.prices.find((price) => price.key === key).amount || 0);
+const escapeHtml = (value) =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const toTelHref = (value) => `tel:${String(value || "").replace(/[^\d+]/g, "")}`;
 
@@ -787,6 +787,33 @@ const submitBooking = async () => {
   return result;
 };
 
+const submitContactRequest = async () => {
+  const data = new FormData(contactForm);
+  const payload = {
+    name: data.get("name"),
+    email: data.get("email"),
+    phone: data.get("phone"),
+    subject: data.get("subject"),
+    message: data.get("message"),
+  };
+
+  const response = await fetch("/api/public/contact", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || "Die Nachricht konnte nicht gesendet werden.");
+  }
+
+  return result;
+};
+
 const publicApi = async (url, options = {}) => {
   let response;
   try {
@@ -816,6 +843,7 @@ const editorState = {
   active: false,
   currentTarget: null,
   currentLinkTarget: null,
+  contactRequests: [],
   drag: null,
   justDragged: false,
   panelOpen: false,
@@ -905,6 +933,7 @@ const editorHtml = `
         <button type="button" id="site-editor-enable">Edit-Modus</button>
         <button type="button" id="site-editor-save">Seite speichern</button>
         <button type="button" id="site-editor-prices">Preise bearbeiten</button>
+        <button type="button" id="site-editor-contact-requests">Kontaktanfragen</button>
         <button type="button" id="site-editor-settings">Einstellungen</button>
         <button type="button" id="site-editor-logout">Logout</button>
         <p id="site-editor-status"></p>
@@ -939,50 +968,43 @@ const editorHtml = `
     <div class="site-editor-modal-dialog">
       <h3>Einstellungen</h3>
       <label class="site-editor-field">
-        <span>Zieladresse f&uuml;r "E-Mail senden"</span>
+        <span>Kontakt-E-Mail f&uuml;r Fu&szlig;zeile und Kontakt</span>
         <input type="email" id="site-settings-booking-email" placeholder="info@hiasenhof-thiersee.at" required />
       </label>
       <label class="site-editor-field">
         <span>Telefon f&uuml;r Fu&szlig;zeile und Kontakt</span>
         <input type="tel" id="site-settings-booking-phone" placeholder="+43 664 885 305 24" required />
       </label>
-      <label class="site-editor-field">
-        <span>SMTP Host</span>
-        <input type="text" id="site-settings-smtp-host" placeholder="smtp.example.com" required />
-      </label>
-      <div class="site-settings-grid">
+      <div class="site-editor-settings-section">
+        <h4>Admin-Passwort ändern</h4>
         <label class="site-editor-field">
-          <span>SMTP Port</span>
-          <input type="number" id="site-settings-smtp-port" placeholder="587" required />
+          <span>Aktuelles Passwort</span>
+          <input type="password" id="site-settings-current-password" autocomplete="current-password" />
         </label>
         <label class="site-editor-field">
-          <span>Sicher</span>
-          <select id="site-settings-smtp-secure">
-            <option value="false">Nein</option>
-            <option value="true">Ja</option>
-          </select>
+          <span>Neues Passwort</span>
+          <input type="password" id="site-settings-new-password" autocomplete="new-password" />
         </label>
+        <label class="site-editor-field">
+          <span>Neues Passwort wiederholen</span>
+          <input type="password" id="site-settings-confirm-password" autocomplete="new-password" />
+        </label>
+        <button type="button" id="site-settings-change-password">Passwort ändern</button>
       </div>
-      <label class="site-editor-field">
-        <span>Absender E-Mail</span>
-        <input type="email" id="site-settings-smtp-from-email" placeholder="info@hiasenhof-thiersee.at" required />
-      </label>
-      <label class="site-editor-field">
-        <span>Absender Name</span>
-        <input type="text" id="site-settings-smtp-from-name" placeholder="Hiasen Hof Website" required />
-      </label>
-      <label class="site-editor-field">
-        <span>SMTP Benutzer</span>
-        <input type="text" id="site-settings-smtp-user" placeholder="Benutzername" required />
-      </label>
-      <label class="site-editor-field">
-        <span>SMTP Passwort</span>
-        <input type="password" id="site-settings-smtp-pass" placeholder="Passwort" required />
-      </label>
-      <p class="footer-note">Ohne SMTP Host und Absenderadresse kann keine Buchungs-E-Mail versendet werden.</p>
+      <p class="footer-note">Kontakt- und Buchungsanfragen werden intern gespeichert und sind in der Admin-Konsole sichtbar.</p>
       <div class="site-editor-modal-actions">
         <button type="button" id="site-settings-cancel" data-settings-close>Abbrechen</button>
         <button type="button" id="site-settings-save">Speichern</button>
+      </div>
+    </div>
+  </div>
+  <div class="site-editor-modal" id="site-contact-requests-modal" data-editor-ui hidden>
+    <div class="site-editor-modal-backdrop" data-contact-requests-close></div>
+    <div class="site-editor-modal-dialog site-editor-modal-dialog-wide">
+      <h3>Kontaktanfragen</h3>
+      <div class="site-contact-requests-list" id="site-contact-requests-list"></div>
+      <div class="site-editor-modal-actions">
+        <button type="button" id="site-contact-requests-close" data-contact-requests-close>Schlie&szlig;en</button>
       </div>
     </div>
   </div>
@@ -1393,6 +1415,60 @@ const saveCurrentPage = async () => {
   }
 };
 
+const renderContactRequests = () => {
+  const list = document.querySelector("#site-contact-requests-list");
+  if (!list) {
+    return;
+  }
+
+  if (!editorState.contactRequests || editorState.contactRequests.length === 0) {
+    list.innerHTML = '<p class="footer-note">Noch keine Kontaktanfragen vorhanden.</p>';
+    return;
+  }
+
+  list.innerHTML = editorState.contactRequests
+    .map(
+      (entry) => `
+        <article class="site-contact-request-card">
+          <div class="site-contact-request-header">
+            <div>
+              <strong>${escapeHtml(entry.name || "Unbekannt")}</strong>
+              <p>${escapeHtml(entry.subject || "Allgemeine Anfrage")}</p>
+            </div>
+            <span class="status-chip ${entry.status === "done" ? "reserved" : "free"}">${entry.status === "done" ? "Erledigt" : "Neu"}</span>
+          </div>
+          <div class="site-contact-request-meta">
+            <a href="mailto:${escapeHtml(entry.email || "")}">${escapeHtml(entry.email || "-")}</a>
+            <span>${escapeHtml(entry.phone || "Keine Telefonnummer")}</span>
+            <span>${new Date(entry.createdAt).toLocaleString("de-AT")}</span>
+          </div>
+          <p class="site-contact-request-message">${escapeHtml(entry.message || "")}</p>
+          <div class="site-contact-request-actions">
+            <button type="button" data-contact-request-status="${entry.id}" data-status-value="${entry.status === "done" ? "new" : "done"}">
+              ${entry.status === "done" ? "Als neu markieren" : "Als erledigt markieren"}
+            </button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+
+  list.querySelectorAll("[data-contact-request-status]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-contact-request-status");
+      const status = button.getAttribute("data-status-value");
+      const result = await publicApi(`/api/admin/contact-requests/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      editorState.contactRequests = editorState.contactRequests.map((entry) =>
+        entry.id === id ? { ...entry, ...(result.contactRequest || {}), status } : entry,
+      );
+      renderContactRequests();
+    });
+  });
+};
+
 const bindPitchDrag = () => {
   if (!editorState.active || !pitchDetailMap) {
     return;
@@ -1462,20 +1538,31 @@ const initPublicEditor = async () => {
   const logoutButton = document.querySelector("#site-editor-logout");
   const userText = document.querySelector("#site-editor-user");
   const priceButton = document.querySelector("#site-editor-prices");
+  const contactRequestsButton = document.querySelector("#site-editor-contact-requests");
   const settingsButton = document.querySelector("#site-editor-settings");
   const priceModal = document.querySelector("#site-price-modal");
   const settingsModal = document.querySelector("#site-settings-modal");
+  const contactRequestsModal = document.querySelector("#site-contact-requests-modal");
   const addPriceButton = document.querySelector("#site-price-add");
   const detailSaveButton = ensurePitchDetailSaveButton();
   const bookingEmailInput = document.querySelector("#site-settings-booking-email");
   const bookingPhoneInput = document.querySelector("#site-settings-booking-phone");
-  const smtpHostInput = document.querySelector("#site-settings-smtp-host");
-  const smtpPortInput = document.querySelector("#site-settings-smtp-port");
-  const smtpSecureInput = document.querySelector("#site-settings-smtp-secure");
-  const smtpFromEmailInput = document.querySelector("#site-settings-smtp-from-email");
-  const smtpFromNameInput = document.querySelector("#site-settings-smtp-from-name");
-  const smtpUserInput = document.querySelector("#site-settings-smtp-user");
-  const smtpPassInput = document.querySelector("#site-settings-smtp-pass");
+  const currentPasswordInput = document.querySelector("#site-settings-current-password");
+  const newPasswordInput = document.querySelector("#site-settings-new-password");
+  const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
+  const changePasswordButton = document.querySelector("#site-settings-change-password");
+
+  const clearPasswordInputs = () => {
+    if (currentPasswordInput) {
+      currentPasswordInput.value = "";
+    }
+    if (newPasswordInput) {
+      newPasswordInput.value = "";
+    }
+    if (confirmPasswordInput) {
+      confirmPasswordInput.value = "";
+    }
+  };
 
   const loadAdminBootstrap = async () => {
     const adminData = await publicApi("/api/admin/bootstrap");
@@ -1489,6 +1576,7 @@ const initPublicEditor = async () => {
       pitches:
         Array.isArray(adminData.pitches) && adminData.pitches.length > 0 ? adminData.pitches : bootstrapData.pitches,
     };
+    editorState.contactRequests = Array.isArray(adminData.contactRequests) ? adminData.contactRequests : [];
     updateContactLinks();
     renderPricingTable();
     updateBookingEstimate();
@@ -1537,6 +1625,12 @@ const initPublicEditor = async () => {
   document.querySelectorAll("[data-settings-close]").forEach((button) =>
     button.addEventListener("click", () => {
       settingsModal.hidden = true;
+      clearPasswordInputs();
+    }),
+  );
+  document.querySelectorAll("[data-contact-requests-close]").forEach((button) =>
+    button.addEventListener("click", () => {
+      contactRequestsModal.hidden = true;
     }),
   );
   document.querySelectorAll("[data-links-close]").forEach((button) =>
@@ -1653,42 +1747,24 @@ const initPublicEditor = async () => {
     priceModal.hidden = false;
   });
 
+  contactRequestsButton.addEventListener("click", async () => {
+    await loadAdminBootstrap();
+    renderContactRequests();
+    contactRequestsModal.hidden = false;
+  });
+
   settingsButton.addEventListener("click", () => {
     bookingEmailInput.value =
       bootstrapData.settings.bookingRecipientEmail || defaultBootstrap.settings.bookingRecipientEmail;
     bookingPhoneInput.value = bootstrapData.settings.bookingPhone || defaultBootstrap.settings.bookingPhone;
-    smtpHostInput.value = bootstrapData.settings.smtp.host || "";
-    smtpPortInput.value = String(bootstrapData.settings.smtp.port || 587);
-    smtpSecureInput.value = String(Boolean(bootstrapData.settings.smtp.secure));
-    smtpFromEmailInput.value = bootstrapData.settings.smtp.fromEmail || "";
-    smtpFromNameInput.value = bootstrapData.settings.smtp.fromName || "Hiasen Hof Website";
-    smtpUserInput.value = bootstrapData.settings.smtp.user || "";
-    smtpPassInput.value = bootstrapData.settings.smtp.pass || "";
+    clearPasswordInputs();
     settingsModal.hidden = false;
   });
 
   document.querySelector("#site-settings-save").addEventListener("click", async () => {
     const bookingRecipientEmail = String(bookingEmailInput.value || "").trim();
     const bookingPhone = String(bookingPhoneInput.value || "").trim();
-    const smtp = {
-      host: String(smtpHostInput.value || "").trim(),
-      port: Number(smtpPortInput.value || 587),
-      secure: smtpSecureInput.value === "true",
-      fromEmail: String(smtpFromEmailInput.value || "").trim(),
-      fromName: String(smtpFromNameInput.value || "").trim(),
-      user: String(smtpUserInput.value || "").trim(),
-      pass: String(smtpPassInput.value || "").trim(),
-    };
-    const requiredSettings = [
-      bookingRecipientEmail,
-      bookingPhone,
-      smtp.host,
-      String(smtp.port || ""),
-      smtp.fromEmail,
-      smtp.fromName,
-      smtp.user,
-      smtp.pass,
-    ];
+    const requiredSettings = [bookingRecipientEmail, bookingPhone];
     if (requiredSettings.some((value) => !String(value || "").trim())) {
       const status = document.querySelector("#site-editor-status");
       if (status) {
@@ -1698,7 +1774,7 @@ const initPublicEditor = async () => {
     }
     const result = await publicApi("/api/admin/settings", {
       method: "PUT",
-      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, smtp }),
+      body: JSON.stringify({ bookingRecipientEmail, bookingPhone }),
     });
     bootstrapData.settings = {
       ...bootstrapData.settings,
@@ -1709,6 +1785,37 @@ const initPublicEditor = async () => {
     const status = document.querySelector("#site-editor-status");
     if (status) {
       status.textContent = "Einstellungen gespeichert.";
+    }
+  });
+
+  changePasswordButton?.addEventListener("click", async () => {
+    const currentPassword = String(currentPasswordInput?.value || "");
+    const newPassword = String(newPasswordInput?.value || "");
+    const confirmPassword = String(confirmPasswordInput?.value || "");
+    const status = document.querySelector("#site-editor-status");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      if (status) {
+        status.textContent = "Bitte alle Passwort-Felder ausfüllen.";
+      }
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      if (status) {
+        status.textContent = "Die neuen Passwörter stimmen nicht überein.";
+      }
+      return;
+    }
+
+    await publicApi("/api/admin/account/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+
+    clearPasswordInputs();
+    if (status) {
+      status.textContent = "Admin-Passwort gespeichert.";
     }
   });
 
@@ -1817,7 +1924,7 @@ const init = async () => {
       }
 
       try {
-        formStatus.textContent = "Anfrage wird gesendet...";
+        formStatus.textContent = "Anfrage wird gespeichert...";
         await submitBooking();
         bookingForm.reset();
         selectedBookingPitch = null;
@@ -1832,9 +1939,33 @@ const init = async () => {
           button.setAttribute("aria-pressed", "false");
         });
         updateBookingEstimate();
-        formStatus.textContent = "Die Anfrage wurde erfolgreich gesendet.";
+        formStatus.textContent = "Die Anfrage wurde erfolgreich gespeichert.";
       } catch (error) {
         formStatus.textContent = error.message;
+      }
+    });
+  }
+
+  if (contactForm && contactFormStatus) {
+    contactForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const data = new FormData(contactForm);
+      const requiredValues = [data.get("name"), data.get("email"), data.get("message")];
+      const hasMissingField = requiredValues.some((value) => !String(value || "").trim());
+
+      if (hasMissingField) {
+        contactFormStatus.textContent = "Bitte alle Pflichtfelder ausfüllen.";
+        return;
+      }
+
+      try {
+        contactFormStatus.textContent = "Nachricht wird gespeichert...";
+        await submitContactRequest();
+        contactForm.reset();
+        contactFormStatus.textContent = "Die Nachricht wurde erfolgreich gespeichert.";
+      } catch (error) {
+        contactFormStatus.textContent = error.message;
       }
     });
   }

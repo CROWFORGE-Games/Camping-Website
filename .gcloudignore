@@ -1,0 +1,10 @@
+.git
+.gitignore
+.gcloudignore
+node_modules
+data
+uploads
+.env
+.playwright-cli
+npm-debug.log*
+deploy/google-cloud/cloudrun.env.generated.yaml
