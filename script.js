@@ -498,10 +498,10 @@ const renderBookingPitchOptions = () => {
 const renderSitePlan = () => {
   const groups = groupedPitches();
   const zoneSelectors = [
-    { zone: "wiese3", selector: ".zone-wiese3" },
-    { zone: "wiese1", selector: ".zone-wiese1" },
-    { zone: "wiese2", selector: ".zone-wiese2" },
-    { zone: "see", selector: ".zone-see" },
+    { zone: "wiese3", selector: ".zone-wiese3, .availability-zone-wiese3" },
+    { zone: "wiese1", selector: ".zone-wiese1, .availability-zone-wiese1" },
+    { zone: "wiese2", selector: ".zone-wiese2, .availability-zone-wiese2" },
+    { zone: "see", selector: ".zone-see, .availability-zone-see" },
   ];
 
   zoneSelectors.forEach(({ zone, selector }) => {
@@ -514,12 +514,29 @@ const renderSitePlan = () => {
     const pitches = groups.get(zone) || [];
     const info = section.querySelector(".zone-header p");
     const grid = section.querySelector(".pitch-grid");
+    const freeCountLabel = section.querySelector(".availability-zone-count");
+    const freeCount = pitches.filter((pitch) => pitch.status === "free").length;
 
     if (info) {
       info.textContent =
         pitches.length > 0
           ? `Plätze ${pitches[0].number} bis ${pitches[pitches.length - 1].number}`
           : "Keine aktiven Plätze";
+    }
+
+    if (freeCountLabel) {
+      freeCountLabel.classList.remove("is-good", "is-low", "is-full");
+      if (freeCount === 0) {
+        freeCountLabel.classList.add("is-full");
+      } else if (pitches.length > 0 && freeCount / pitches.length <= 0.2) {
+        freeCountLabel.classList.add("is-low");
+      } else {
+        freeCountLabel.classList.add("is-good");
+      }
+      freeCountLabel.textContent =
+        freeCount === 0
+          ? "Keine freien Plätze"
+          : `Noch ${freeCount} freie ${freeCount === 1 ? "Platz" : "Plätze"}`;
     }
 
     if (grid) {
@@ -1578,6 +1595,7 @@ const initPublicEditor = async () => {
     };
     editorState.contactRequests = Array.isArray(adminData.contactRequests) ? adminData.contactRequests : [];
     updateContactLinks();
+    renderSitePlan();
     renderPricingTable();
     updateBookingEstimate();
   };
@@ -1848,6 +1866,7 @@ const init = async () => {
   await loadBootstrap();
   closePitchDetail();
   updateContactLinks();
+  renderSitePlan();
   renderPricingTable();
   renderBookingPitchOptions();
   zoneDetailTriggers.forEach((trigger) => {

@@ -99,12 +99,18 @@ Benötigte Variablen:
 - `GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET=Buchungen`
 - `GOOGLE_APPS_SCRIPT_CONTACT_SHEET=Anfragen`
 - `GOOGLE_APPS_SCRIPT_SPOTS_SHEET=Spots`
+- `RESEND_API_KEY=...`
+- `RESEND_FROM_EMAIL=...`
+- `RESEND_FROM_NAME=Hiasen Hof Website`
 
 Wichtig:
 
 - `Kontaktformular` schreibt in das Blatt `Anfragen`.
-- `Buchungen` schreiben in das Blatt `Buchungen`.
+- `Campinganfragen` von der Buchungsseite schreiben ebenfalls in das Blatt `Anfragen`.
+- `Buchungen` bleibt damit frei für später bestätigte Buchungen mit Zusatzfeldern wie Zahlungsstatus.
 - `Spots` wird mit `Stellplatz`, `Stellplatznummer` und `Status` synchron gehalten.
+- Die Website liest die Stellplatz-Statuswerte beim Laden direkt aus `Spots` über Google Apps Script.
+- Wenn `Resend` konfiguriert ist, wird zusätzlich eine E-Mail mit Anfrageart und Formulardaten versendet.
 - Das Token ist optional, aber empfohlen.
 
 ## Push-Benachrichtigungen

@@ -1120,6 +1120,26 @@ a {
   font-weight: 700;
 }
 
+.availability-zone-count {
+  display: inline-flex;
+  width: fit-content;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.availability-zone-count.is-good {
+  color: #1e6a34;
+}
+
+.availability-zone-count.is-low {
+  color: #c78322;
+}
+
+.availability-zone-count.is-full {
+  color: #c84a3e;
+}
+
 .availability-zone .zone-header h3 {
   margin: 0;
   font-size: 1.12rem;

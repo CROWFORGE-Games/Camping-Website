@@ -1,6 +1,6 @@
 # Google Apps Script Setup
 
-Diese Variante schreibt Buchungen, Kontaktanfragen und Spots ueber einen Apps-Script-Web-App-Webhook in dein Google Sheet.
+Diese Variante schreibt Anfragen und Spots ueber einen Apps-Script-Web-App-Webhook in dein Google Sheet und liest die Spot-Statuswerte auch wieder fuer die Website aus.
 
 Dein Sheet:
 
@@ -14,8 +14,9 @@ Dein Sheet:
 4. Optional `SHARED_TOKEN` setzen
 5. `Bereitstellen` -> `Neue Bereitstellung`
 6. Typ `Web-App`
-7. Zugriff so waehlen, dass dein Server posten darf
+7. Zugriff so waehlen, dass dein Server zugreifen darf
 8. Web-App-URL kopieren
+9. Nach spaeteren Aenderungen an `Code.gs` die Web-App erneut bereitstellen
 
 ## Variablen im Website-Projekt
 
@@ -28,16 +29,18 @@ Dein Sheet:
 
 ## Was geschrieben wird
 
-`Buchungen`
+`Anfragen`
 
 - Erstellt am
+- Anfrageart
 - Status
 - Name
 - E-Mail
 - Telefon
-- Straße
+- Strasse
 - PLZ / Ort
 - Land
+- Betreff
 - Anreise
 - Abreise
 - Wunschstellplatz
@@ -47,18 +50,7 @@ Dein Sheet:
 - Erwachsene
 - Kinder
 - Alter der Kinder
-- Geschätzter Gesamtpreis
-- Nachricht
-- ID
-
-`Anfragen`
-
-- Erstellt am
-- Status
-- Name
-- E-Mail
-- Telefon
-- Betreff
+- Geschaetzter Gesamtpreis
 - Nachricht
 - ID
 
@@ -67,3 +59,13 @@ Dein Sheet:
 - Stellplatz
 - Stellplatznummer
 - Status
+
+## Was gelesen wird
+
+Die Website liest `Spots` direkt ueber Google Apps Script.
+
+Statuswerte:
+
+- `0` = frei
+- `1` = reserviert
+- `2` = besetzt

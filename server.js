@@ -36,6 +36,9 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "change-me-now";
 const BOOKING_RECIPIENT_EMAIL =
   process.env.BOOKING_RECIPIENT_EMAIL || "info@hiasenhof-thiersee.at";
 const BOOKING_PHONE = process.env.BOOKING_PHONE || "+43 664 885 305 24";
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
+const RESEND_FROM_EMAIL = String(process.env.RESEND_FROM_EMAIL || "").trim();
+const RESEND_FROM_NAME = String(process.env.RESEND_FROM_NAME || "Hiasen Hof Website").trim();
 const GOOGLE_APPS_SCRIPT_ENABLED = parseBooleanEnv(process.env.GOOGLE_APPS_SCRIPT_ENABLED, false);
 const GOOGLE_APPS_SCRIPT_WEBHOOK_URL = String(process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || "").trim();
 const GOOGLE_APPS_SCRIPT_TOKEN = String(process.env.GOOGLE_APPS_SCRIPT_TOKEN || "").trim();
@@ -200,6 +203,36 @@ const postToAppsScript = async (eventType, payload) => {
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || `Apps Script Fehler: ${response.status} ${response.statusText}`);
   }
+};
+
+const getFromAppsScript = async (eventType, params = {}) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return null;
+  }
+
+  const url = new URL(config.url);
+  url.searchParams.set("eventType", eventType);
+
+  if (config.token) {
+    url.searchParams.set("token", config.token);
+  }
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+
+  const response = await fetch(url, { method: "GET" });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.error || `Apps Script Fehler: ${response.status} ${response.statusText}`);
+  }
+
+  return data;
 };
 
 const googleTokenCache = {
@@ -408,12 +441,92 @@ const clearAndReplaceSheet = async (sheetName, headers, rows) => {
 
 const formatPitchStatusForSheet = (status) => {
   const map = {
-    free: "frei",
-    reserved: "reserviert",
-    occupied: "besetzt",
+    free: "0",
+    reserved: "1",
+    occupied: "2",
   };
 
-  return map[String(status || "").trim()] || String(status || "").trim() || "frei";
+  return map[String(status || "").trim()] || String(status || "").trim() || "0";
+};
+
+const normalizePitchZone = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "");
+
+  if (normalized.startsWith("wiese1")) {
+    return "wiese1";
+  }
+  if (normalized.startsWith("wiese2")) {
+    return "wiese2";
+  }
+  if (normalized.startsWith("wiese3")) {
+    return "wiese3";
+  }
+  if (normalized.startsWith("seeplatz") || normalized.startsWith("seeplatze") || normalized.startsWith("see")) {
+    return "see";
+  }
+
+  return normalized;
+};
+
+const parsePitchStatusFromSheet = (status) => {
+  const normalized = String(status || "").trim().toLowerCase();
+
+  if (normalized === "0" || normalized === "frei" || normalized === "free") {
+    return "free";
+  }
+  if (normalized === "1" || normalized === "reserviert" || normalized === "reserved") {
+    return "reserved";
+  }
+  if (normalized === "2" || normalized === "besetzt" || normalized === "occupied") {
+    return "occupied";
+  }
+
+  return null;
+};
+
+const mergePitchesWithSheetRows = (pitches, rows) => {
+  const rowMap = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const zone = normalizePitchZone(row.stellplatz);
+    const number = Number(row.stellplatznummer || 0);
+    const status = parsePitchStatusFromSheet(row.status);
+
+    if (!zone || !number || !status) {
+      return;
+    }
+
+    rowMap.set(`${zone}:${number}`, status);
+  });
+
+  return pitches.map((pitch) => {
+    const mergedStatus = rowMap.get(`${normalizePitchZone(pitch.zone || pitch.zoneLabel)}:${Number(pitch.number || 0)}`);
+    return mergedStatus ? { ...pitch, status: mergedStatus } : pitch;
+  });
+};
+
+const resolvePitchesWithRemoteStatus = async (pitches) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return pitches;
+  }
+
+  try {
+    const data = await getFromAppsScript("spots", {
+      sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
+    });
+
+    return mergePitchesWithSheetRows(pitches, data?.rows || []);
+  } catch (error) {
+    console.error("Spots konnten nicht aus Google Sheets gelesen werden.", error);
+    return pitches;
+  }
 };
 
 const parsePreferredPitch = (value) => {
@@ -517,8 +630,9 @@ const syncBookingToAppsScript = async (booking) => {
   const preferredPitch = parsePreferredPitch(booking.preferredPitch);
 
   await postToAppsScript("booking", {
-    sheetName: GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET,
+    sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
     row: {
+      inquiryType: "Campinganfrage",
       createdAt: booking.createdAt,
       status: booking.status,
       name: booking.name,
@@ -547,6 +661,7 @@ const syncContactRequestToAppsScript = async (contactRequest) => {
   await postToAppsScript("contact", {
     sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
     row: {
+      inquiryType: "Kontaktanfrage",
       createdAt: contactRequest.createdAt,
       status: contactRequest.status,
       name: contactRequest.name,
@@ -635,14 +750,14 @@ const writeEditablePage = (slug, content) => {
   return true;
 };
 
-const publicBootstrap = (store) => ({
+const publicBootstrap = (store, pitches = store.pitches.filter((pitch) => pitch.active)) => ({
   settings: {
     siteName: store.settings.siteName,
     bookingPhone: store.settings.bookingPhone,
     bookingRecipientEmail: store.settings.bookingRecipientEmail,
   },
   prices: store.prices,
-  pitches: store.pitches.filter((pitch) => pitch.active),
+  pitches,
 });
 
 const authUser = (req) => {
@@ -707,6 +822,104 @@ const sendBookingNotification = async (booking) => {
     store.pushSubscriptions = validSubscriptions;
     writeStore(store);
   }
+};
+
+const isResendConfigured = () => Boolean(RESEND_API_KEY && RESEND_FROM_EMAIL);
+
+const sendResendEmail = async ({ subject, text, replyTo }) => {
+  const store = loadStore();
+  const recipient = store.settings.bookingRecipientEmail;
+
+  if (!recipient) {
+    throw new Error("Keine Empfänger-E-Mail für Anfragen hinterlegt.");
+  }
+
+  if (!isResendConfigured()) {
+    return false;
+  }
+
+  const payload = {
+    from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
+    to: [recipient],
+    subject,
+    text,
+  };
+
+  if (replyTo) {
+    payload.reply_to = replyTo;
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.message || result.error || "Resend-Versand fehlgeschlagen.");
+  }
+
+  return true;
+};
+
+const sendBookingEmailViaResend = async (booking) => {
+  const pitchList = Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "-";
+
+  return sendResendEmail({
+    subject: `Neue Buchungsanfrage ${booking.arrival} bis ${booking.departure}`,
+    text: [
+      "Neue Buchungsanfrage über die Website",
+      "",
+      "Anfrageart: Buchungsanfrage",
+      "",
+      `Name: ${booking.name}`,
+      `Straße: ${booking.street}`,
+      `PLZ / Ort: ${booking.city}`,
+      `Land: ${booking.country}`,
+      `E-Mail: ${booking.email}`,
+      `Telefon: ${booking.phone}`,
+      "",
+      `Anreise: ${booking.arrival}`,
+      `Abreise: ${booking.departure}`,
+      `Wunschstellplatz: ${booking.preferredPitch || "-"}`,
+      `Platzwahl: ${pitchList}`,
+      `Erwachsene: ${booking.adults}`,
+      `Kinder: ${booking.children}`,
+      `Alter der Kinder: ${booking.childrenAge || "-"}`,
+      `Geschätzter Gesamtpreis: ${booking.estimatedTotal || "-"}`,
+      "",
+      `Zusätzliche Informationen: ${booking.message || "-"}`,
+      "",
+      `Erstellt: ${booking.createdAt}`,
+    ].join("\n"),
+    replyTo: booking.email || undefined,
+  });
+};
+
+const sendContactEmailViaResend = async (contactRequest) => {
+  return sendResendEmail({
+    subject: `Neue Kontaktanfrage${contactRequest.subject ? `: ${contactRequest.subject}` : ""}`,
+    text: [
+      "Neue Kontaktanfrage über die Website",
+      "",
+      "Anfrageart: Kontaktanfrage",
+      "",
+      `Name: ${contactRequest.name}`,
+      `E-Mail: ${contactRequest.email}`,
+      `Telefon: ${contactRequest.phone || "-"}`,
+      `Betreff: ${contactRequest.subject || "-"}`,
+      "",
+      `Nachricht: ${contactRequest.message || "-"}`,
+      "",
+      `Erstellt: ${contactRequest.createdAt}`,
+    ].join("\n"),
+    replyTo: contactRequest.email || undefined,
+  });
 };
 
 const sendBookingEmail = async (booking) => {
@@ -802,8 +1015,10 @@ app.use("/assets", express.static(path.join(ROOT_DIR, "assets")));
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/admin", express.static(ADMIN_DIR));
 
-app.get("/api/public/bootstrap", (_req, res) => {
-  res.json(publicBootstrap(loadStore()));
+app.get("/api/public/bootstrap", async (_req, res) => {
+  const store = loadStore();
+  const pitches = await resolvePitchesWithRemoteStatus(store.pitches.filter((pitch) => pitch.active));
+  res.json(publicBootstrap(store, pitches));
 });
 
 app.post("/api/public/bookings", async (req, res) => {
@@ -855,6 +1070,12 @@ app.post("/api/public/bookings", async (req, res) => {
     await sendBookingNotification(booking);
   } catch (error) {
     console.error("Push-Benachrichtigung konnte nicht gesendet werden.", error);
+  }
+
+  try {
+    await sendBookingEmailViaResend(booking);
+  } catch (error) {
+    console.error("Resend-Versand für Buchungsanfrage fehlgeschlagen.", error);
   }
 
   res.json({ ok: true, bookingId: booking.id });
@@ -932,6 +1153,12 @@ app.post("/api/public/contact", async (req, res) => {
     console.error("Push-Benachrichtigung für Kontaktanfrage konnte nicht gesendet werden.", error);
   }
 
+  try {
+    await sendContactEmailViaResend(contactRequest);
+  } catch (error) {
+    console.error("Resend-Versand für Kontaktanfrage fehlgeschlagen.", error);
+  }
+
   res.json({ ok: true, contactRequestId: contactRequest.id });
 });
 
@@ -980,13 +1207,14 @@ app.get("/api/auth/session", (req, res) => {
   });
 });
 
-app.get("/api/admin/bootstrap", requireAuth, (_req, res) => {
+app.get("/api/admin/bootstrap", requireAuth, async (_req, res) => {
   const store = loadStore();
+  const pitches = await resolvePitchesWithRemoteStatus(store.pitches);
   res.json({
     user: { id: _req.user.id, email: _req.user.email, role: _req.user.role },
     settings: store.settings,
     prices: store.prices,
-    pitches: store.pitches,
+    pitches,
     bookings: store.bookings,
     contactRequests: store.contactRequests,
     users: store.users.map(({ passwordHash, ...user }) => user),

@@ -1,6 +1,30 @@
 const SPREADSHEET_ID = '1r7EpmM4JBXTvac94nl73T98qYjzDH9r26pS2XUfKq3w';
 const SHARED_TOKEN = '';
 
+function doGet(e) {
+  try {
+    const params = (e && e.parameter) || {};
+
+    if (SHARED_TOKEN && String(params.token || '') !== SHARED_TOKEN) {
+      return jsonResponse({ ok: false, error: 'Ungültiges Token.' });
+    }
+
+    const eventType = String(params.eventType || '');
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    if (eventType === 'spots') {
+      return jsonResponse({
+        ok: true,
+        rows: readSpots(spreadsheet, String(params.sheetName || 'Spots')),
+      });
+    }
+
+    return jsonResponse({ ok: false, error: 'Unbekannter eventType.' });
+  } catch (error) {
+    return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+  }
+}
+
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
@@ -13,13 +37,8 @@ function doPost(e) {
     const payload = body.payload || {};
     const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-    if (eventType === 'booking') {
-      appendBooking(spreadsheet, payload);
-      return jsonResponse({ ok: true });
-    }
-
-    if (eventType === 'contact') {
-      appendContact(spreadsheet, payload);
+    if (eventType === 'booking' || eventType === 'contact') {
+      appendInquiry(spreadsheet, payload);
       return jsonResponse({ ok: true });
     }
 
@@ -35,9 +54,7 @@ function doPost(e) {
 }
 
 function jsonResponse(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function getOrCreateSheet(spreadsheet, sheetName) {
@@ -61,11 +78,12 @@ function writeHeaders(sheet, headers) {
   }
 }
 
-function appendBooking(spreadsheet, payload) {
-  const sheetName = String(payload.sheetName || 'Buchungen');
+function appendInquiry(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Anfragen');
   const row = payload.row || {};
   const headers = [
     'Erstellt am',
+    'Anfrageart',
     'Status',
     'Name',
     'E-Mail',
@@ -73,6 +91,7 @@ function appendBooking(spreadsheet, payload) {
     'Straße',
     'PLZ / Ort',
     'Land',
+    'Betreff',
     'Anreise',
     'Abreise',
     'Wunschstellplatz',
@@ -84,10 +103,11 @@ function appendBooking(spreadsheet, payload) {
     'Alter der Kinder',
     'Geschätzter Gesamtpreis',
     'Nachricht',
-    'ID'
+    'ID',
   ];
   const values = [[
     row.createdAt || '',
+    row.inquiryType || '',
     row.status || '',
     row.name || '',
     row.email || '',
@@ -95,6 +115,7 @@ function appendBooking(spreadsheet, payload) {
     row.street || '',
     row.city || '',
     row.country || '',
+    row.subject || '',
     row.arrival || '',
     row.departure || '',
     row.preferredPitch || '',
@@ -106,36 +127,7 @@ function appendBooking(spreadsheet, payload) {
     row.childrenAge || '',
     row.estimatedTotal || '',
     row.message || '',
-    row.id || ''
-  ]];
-
-  const sheet = getOrCreateSheet(spreadsheet, sheetName);
-  writeHeaders(sheet, headers);
-  sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
-}
-
-function appendContact(spreadsheet, payload) {
-  const sheetName = String(payload.sheetName || 'Anfragen');
-  const row = payload.row || {};
-  const headers = [
-    'Erstellt am',
-    'Status',
-    'Name',
-    'E-Mail',
-    'Telefon',
-    'Betreff',
-    'Nachricht',
-    'ID'
-  ];
-  const values = [[
-    row.createdAt || '',
-    row.status || '',
-    row.name || '',
-    row.email || '',
-    row.phone || '',
-    row.subject || '',
-    row.message || '',
-    row.id || ''
+    row.id || '',
   ]];
 
   const sheet = getOrCreateSheet(spreadsheet, sheetName);
@@ -148,11 +140,7 @@ function replaceSpots(spreadsheet, payload) {
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   const headers = ['Stellplatz', 'Stellplatznummer', 'Status'];
   const values = rows.map(function (row) {
-    return [
-      row.stellplatz || '',
-      row.stellplatznummer || '',
-      row.status || ''
-    ];
+    return [row.stellplatz || '', row.stellplatznummer || '', row.status || ''];
   });
 
   const sheet = getOrCreateSheet(spreadsheet, sheetName);
@@ -162,4 +150,30 @@ function replaceSpots(spreadsheet, payload) {
   if (values.length > 0) {
     sheet.getRange(2, 1, values.length, headers.length).setValues(values);
   }
+}
+
+function readSpots(spreadsheet, sheetName) {
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) {
+    return [];
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+  const indexByHeader = {};
+
+  headers.forEach(function (header, index) {
+    indexByHeader[String(header || '').trim()] = index;
+  });
+
+  return values.map(function (row) {
+    return {
+      stellplatz: row[indexByHeader['Stellplatz']] || '',
+      stellplatznummer: row[indexByHeader['Stellplatznummer']] || '',
+      status: row[indexByHeader['Status']] || '',
+    };
+  });
 }
