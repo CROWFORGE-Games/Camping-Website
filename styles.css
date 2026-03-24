@@ -400,6 +400,25 @@ a {
   box-shadow: 0 16px 36px rgba(47, 138, 72, 0.24);
 }
 
+.button[data-loading="true"] {
+  position: relative;
+  opacity: 0.92;
+  cursor: wait;
+}
+
+.button[data-loading="true"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-left: 0.55rem;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  vertical-align: -0.15rem;
+  animation: site-editor-spin 0.8s linear infinite;
+}
+
 .button-secondary {
   border-color: rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.08);
@@ -1675,6 +1694,14 @@ label:has(select[required]) > span::after,
   flex-wrap: wrap;
 }
 
+.site-contact-request-actions-primary,
+.site-contact-request-reply-actions {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .site-contact-request-header p,
 .site-contact-request-message {
   margin: 0;
@@ -1695,6 +1722,32 @@ label:has(select[required]) > span::after,
   font-weight: 700;
   cursor: pointer;
   padding: 0.7rem 1rem;
+}
+
+.site-contact-request-reply-toggle {
+  margin-left: auto;
+}
+
+.site-contact-request-actions button.is-danger {
+  background: rgba(172, 42, 42, 0.14);
+  color: #8f2020;
+}
+
+.site-contact-request-reply {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.site-contact-request-reply textarea {
+  width: 100%;
+  min-height: 7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(22, 48, 57, 0.14);
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
 }
 
 .contact-form-card {

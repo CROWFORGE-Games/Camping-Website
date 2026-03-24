@@ -41,6 +41,7 @@ const defaultBootstrap = {
     siteName: "Hiasen Hof am Thiersee",
     bookingPhone: "+43 664 885 305 24",
     bookingRecipientEmail: "info@hiasenhof-thiersee.at",
+    senderName: "Camping",
   },
   prices: [
     { key: "adult", label: "Erwachsener ab 15 Jahre", amount: 7.5, category: "person", unit: "night" },
@@ -969,7 +970,7 @@ const editorState = {
   active: false,
   currentTarget: null,
   currentLinkTarget: null,
-  contactRequests: [],
+  inquiries: [],
   drag: null,
   justDragged: false,
   panelOpen: false,
@@ -989,6 +990,30 @@ const pageSlugFromPath = () => {
     "impressum.html": "impressum",
   };
   return map[file] || "index";
+};
+
+const buildAdminInquiries = (adminData = {}) => {
+  const bookings = Array.isArray(adminData.bookings) ? adminData.bookings : [];
+  const contactRequests = Array.isArray(adminData.contactRequests) ? adminData.contactRequests : [];
+
+  return [
+    ...bookings.map((entry) => ({
+      ...entry,
+      inquiryType: "Buchungsanfrage",
+      sourceType: "booking",
+      title: entry.name || "Unbekannt",
+      subtitle: entry.preferredPitch || "Reservierungsanfrage",
+      detail: [entry.arrival, entry.departure].filter(Boolean).join(" bis ") || "Reservierungsanfrage",
+    })),
+    ...contactRequests.map((entry) => ({
+      ...entry,
+      inquiryType: "Kontaktanfrage",
+      sourceType: "contact",
+      title: entry.name || "Unbekannt",
+      subtitle: entry.subject || "Allgemeine Anfrage",
+      detail: "",
+    })),
+  ].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""), "de"));
 };
 
 const editableSelectors = [
@@ -1059,7 +1084,7 @@ const editorHtml = `
         <button type="button" id="site-editor-enable">Edit-Modus</button>
         <button type="button" id="site-editor-save">Seite speichern</button>
         <button type="button" id="site-editor-prices">Preise bearbeiten</button>
-        <button type="button" id="site-editor-contact-requests">Kontaktanfragen</button>
+        <button type="button" id="site-editor-contact-requests">Anfragen</button>
         <button type="button" id="site-editor-settings">Einstellungen</button>
         <button type="button" id="site-editor-logout">Logout</button>
         <p id="site-editor-status"></p>
@@ -1101,6 +1126,10 @@ const editorHtml = `
         <span>Telefon f&uuml;r Fu&szlig;zeile und Kontakt</span>
         <input type="tel" id="site-settings-booking-phone" placeholder="+43 664 885 305 24" required />
       </label>
+      <label class="site-editor-field">
+        <span>Absendername f&uuml;r E-Mails</span>
+        <input type="text" id="site-settings-sender-name" placeholder="Camping" required />
+      </label>
       <div class="site-editor-settings-section">
         <h4>Admin-Passwort ändern</h4>
         <label class="site-editor-field">
@@ -1127,7 +1156,7 @@ const editorHtml = `
   <div class="site-editor-modal" id="site-contact-requests-modal" data-editor-ui hidden>
     <div class="site-editor-modal-backdrop" data-contact-requests-close></div>
     <div class="site-editor-modal-dialog site-editor-modal-dialog-wide">
-      <h3>Kontaktanfragen</h3>
+      <h3>Anfragen</h3>
       <div class="site-contact-requests-list" id="site-contact-requests-list"></div>
       <div class="site-editor-modal-actions">
         <button type="button" id="site-contact-requests-close" data-contact-requests-close>Schlie&szlig;en</button>
@@ -1547,19 +1576,19 @@ const renderContactRequests = () => {
     return;
   }
 
-  if (!editorState.contactRequests || editorState.contactRequests.length === 0) {
-    list.innerHTML = '<p class="footer-note">Noch keine Kontaktanfragen vorhanden.</p>';
+  if (!editorState.inquiries || editorState.inquiries.length === 0) {
+    list.innerHTML = '<p class="footer-note">Noch keine Anfragen vorhanden.</p>';
     return;
   }
 
-  list.innerHTML = editorState.contactRequests
+  list.innerHTML = editorState.inquiries
     .map(
       (entry) => `
         <article class="site-contact-request-card">
           <div class="site-contact-request-header">
             <div>
-              <strong>${escapeHtml(entry.name || "Unbekannt")}</strong>
-              <p>${escapeHtml(entry.subject || "Allgemeine Anfrage")}</p>
+              <strong>${escapeHtml(entry.title || entry.name || "Unbekannt")}</strong>
+              <p>${escapeHtml(entry.inquiryType || "Anfrage")} · ${escapeHtml(entry.subtitle || "-")}</p>
             </div>
             <span class="status-chip ${entry.status === "done" ? "reserved" : "free"}">${entry.status === "done" ? "Erledigt" : "Neu"}</span>
           </div>
@@ -1568,11 +1597,28 @@ const renderContactRequests = () => {
             <span>${escapeHtml(entry.phone || "Keine Telefonnummer")}</span>
             <span>${escapeHtml(formatDateTimeDisplay(entry.createdAt))}</span>
           </div>
+          ${entry.detail ? `<p class="site-contact-request-message">${escapeHtml(entry.detail)}</p>` : ""}
           <p class="site-contact-request-message">${escapeHtml(entry.message || "")}</p>
           <div class="site-contact-request-actions">
-            <button type="button" data-contact-request-status="${entry.id}" data-status-value="${entry.status === "done" ? "new" : "done"}">
-              ${entry.status === "done" ? "Als neu markieren" : "Als erledigt markieren"}
+            <div class="site-contact-request-actions-primary">
+              <button type="button" data-contact-request-status="${entry.id}" data-request-type="${entry.sourceType}" data-status-value="${entry.status === "done" ? "new" : "done"}">
+                ${entry.status === "done" ? "Als neu markieren" : "Als erledigt markieren"}
+              </button>
+              <button type="button" class="is-danger" data-contact-request-delete="${entry.id}" data-request-type="${entry.sourceType}">
+                Löschen
+              </button>
+            </div>
+            <button type="button" data-contact-request-reply-toggle="${entry.id}" class="site-contact-request-reply-toggle">
+              Antworten
             </button>
+          </div>
+          <div class="site-contact-request-reply" id="reply-${entry.id}" hidden>
+            <textarea data-contact-request-reply-message="${entry.id}" rows="4" placeholder="Antwort eingeben..."></textarea>
+            <div class="site-contact-request-reply-actions">
+              <button type="button" data-contact-request-reply-send="${entry.id}" data-request-type="${entry.sourceType}">
+                Antwort senden
+              </button>
+            </div>
           </div>
         </article>
       `,
@@ -1582,15 +1628,83 @@ const renderContactRequests = () => {
   list.querySelectorAll("[data-contact-request-status]").forEach((button) => {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-contact-request-status");
+      const requestType = button.getAttribute("data-request-type");
       const status = button.getAttribute("data-status-value");
-      const result = await publicApi(`/api/admin/contact-requests/${id}`, {
+      const endpoint = requestType === "booking" ? `/api/admin/bookings/${id}` : `/api/admin/contact-requests/${id}`;
+      const result = await publicApi(endpoint, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
-      editorState.contactRequests = editorState.contactRequests.map((entry) =>
-        entry.id === id ? { ...entry, ...(result.contactRequest || {}), status } : entry,
+      const resultEntry = result.booking || result.contactRequest || {};
+      editorState.inquiries = editorState.inquiries.map((entry) =>
+        entry.id === id ? { ...entry, ...resultEntry, status } : entry,
       );
       renderContactRequests();
+    });
+  });
+
+  list.querySelectorAll("[data-contact-request-reply-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-contact-request-reply-toggle");
+      const replyBox = document.querySelector(`#reply-${id}`);
+      if (!replyBox) {
+        return;
+      }
+      replyBox.hidden = !replyBox.hidden;
+    });
+  });
+
+  list.querySelectorAll("[data-contact-request-reply-send]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-contact-request-reply-send");
+      const requestType = button.getAttribute("data-request-type");
+      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
+      const message = String(textarea?.value || "").trim();
+
+      if (!message) {
+        return;
+      }
+
+      button.disabled = true;
+      button.dataset.loading = "true";
+
+      try {
+        await publicApi(`/api/admin/inquiries/${requestType}/${id}/reply`, {
+          method: "POST",
+          body: JSON.stringify({ message }),
+        });
+        if (textarea) {
+          textarea.value = "";
+        }
+        const replyBox = document.querySelector(`#reply-${id}`);
+        if (replyBox) {
+          replyBox.hidden = true;
+        }
+      } finally {
+        button.disabled = false;
+        button.dataset.loading = "false";
+      }
+    });
+  });
+
+  list.querySelectorAll("[data-contact-request-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-contact-request-delete");
+      const requestType = button.getAttribute("data-request-type");
+
+      button.disabled = true;
+      button.dataset.loading = "true";
+
+      try {
+        await publicApi(`/api/admin/inquiries/${requestType}/${id}`, {
+          method: "DELETE",
+        });
+        editorState.inquiries = editorState.inquiries.filter((entry) => entry.id !== id);
+        renderContactRequests();
+      } finally {
+        button.disabled = false;
+        button.dataset.loading = "false";
+      }
     });
   });
 };
@@ -1675,6 +1789,7 @@ const initPublicEditor = async () => {
   const detailSaveButton = ensurePitchDetailSaveButton();
   const bookingEmailInput = document.querySelector("#site-settings-booking-email");
   const bookingPhoneInput = document.querySelector("#site-settings-booking-phone");
+  const senderNameInput = document.querySelector("#site-settings-sender-name");
   const currentPasswordInput = document.querySelector("#site-settings-current-password");
   const newPasswordInput = document.querySelector("#site-settings-new-password");
   const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
@@ -1718,7 +1833,7 @@ const initPublicEditor = async () => {
       pitches:
         Array.isArray(adminData.pitches) && adminData.pitches.length > 0 ? adminData.pitches : bootstrapData.pitches,
     };
-    editorState.contactRequests = Array.isArray(adminData.contactRequests) ? adminData.contactRequests : [];
+    editorState.inquiries = buildAdminInquiries(adminData);
     updateContactLinks();
     renderSitePlan();
     renderPricingTable();
@@ -1906,6 +2021,7 @@ const initPublicEditor = async () => {
     bookingEmailInput.value =
       bootstrapData.settings.bookingRecipientEmail || defaultBootstrap.settings.bookingRecipientEmail;
     bookingPhoneInput.value = bootstrapData.settings.bookingPhone || defaultBootstrap.settings.bookingPhone;
+    senderNameInput.value = bootstrapData.settings.senderName || defaultBootstrap.settings.senderName;
     clearPasswordInputs();
     settingsModal.hidden = false;
   });
@@ -1913,7 +2029,8 @@ const initPublicEditor = async () => {
   document.querySelector("#site-settings-save").addEventListener("click", async () => {
     const bookingRecipientEmail = String(bookingEmailInput.value || "").trim();
     const bookingPhone = String(bookingPhoneInput.value || "").trim();
-    const requiredSettings = [bookingRecipientEmail, bookingPhone];
+    const senderName = String(senderNameInput.value || "").trim();
+    const requiredSettings = [bookingRecipientEmail, bookingPhone, senderName];
     if (requiredSettings.some((value) => !String(value || "").trim())) {
       const status = document.querySelector("#site-editor-status");
       if (status) {
@@ -1923,7 +2040,7 @@ const initPublicEditor = async () => {
     }
     const result = await publicApi("/api/admin/settings", {
       method: "PUT",
-      body: JSON.stringify({ bookingRecipientEmail, bookingPhone }),
+      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, senderName }),
     });
     bootstrapData.settings = {
       ...bootstrapData.settings,
@@ -2045,13 +2162,29 @@ const init = async () => {
   if (bookingForm && formStatus) {
     const childrenAgeInput = bookingForm.querySelector('input[name="childrenAge"]');
     const bookingSubmitButton = bookingForm.querySelector('button[type="submit"]');
+    if (bookingSubmitButton && !bookingSubmitButton.dataset.defaultLabel) {
+      bookingSubmitButton.dataset.defaultLabel = bookingSubmitButton.textContent.trim();
+    }
+    const setSubmitButtonLoading = (button, isLoading) => {
+      if (!button) {
+        return;
+      }
+      if (!button.dataset.defaultLabel) {
+        button.dataset.defaultLabel = button.textContent.trim();
+      }
+      button.disabled = isLoading;
+      button.dataset.loading = isLoading ? "true" : "false";
+      button.textContent = isLoading ? button.dataset.defaultLabel : button.dataset.defaultLabel;
+    };
 
     const resetBookingSubmitButton = () => {
       if (!bookingSubmitButton) {
         return;
       }
-      bookingSubmitButton.textContent = "Anfrage senden";
+      bookingSubmitButton.textContent = bookingSubmitButton.dataset.defaultLabel || "Anfrage senden";
       bookingSubmitButton.classList.remove("is-success");
+      bookingSubmitButton.dataset.loading = "false";
+      bookingSubmitButton.disabled = false;
     };
 
     childrenAgeInput.addEventListener("blur", () => {
@@ -2111,6 +2244,7 @@ const init = async () => {
 
       try {
         formStatus.textContent = "Anfrage wird gespeichert...";
+        setSubmitButtonLoading(bookingSubmitButton, true);
         await submitBooking();
         bookingForm.reset();
         selectedBookingPitch = null;
@@ -2128,15 +2262,47 @@ const init = async () => {
         if (bookingSubmitButton) {
           bookingSubmitButton.textContent = "Anfrage gesendet";
           bookingSubmitButton.classList.add("is-success");
+          bookingSubmitButton.dataset.loading = "false";
+          bookingSubmitButton.disabled = false;
         }
         formStatus.textContent = "Die Anfrage wurde erfolgreich gespeichert.";
       } catch (error) {
         formStatus.textContent = error.message;
+        setSubmitButtonLoading(bookingSubmitButton, false);
       }
     });
   }
 
   if (contactForm && contactFormStatus) {
+    const contactSubmitButton = contactForm.querySelector('button[type="submit"]');
+    if (contactSubmitButton && !contactSubmitButton.dataset.defaultLabel) {
+      contactSubmitButton.dataset.defaultLabel = contactSubmitButton.textContent.trim();
+    }
+    const setSubmitButtonLoading = (button, isLoading) => {
+      if (!button) {
+        return;
+      }
+      if (!button.dataset.defaultLabel) {
+        button.dataset.defaultLabel = button.textContent.trim();
+      }
+      button.disabled = isLoading;
+      button.dataset.loading = isLoading ? "true" : "false";
+      button.textContent = button.dataset.defaultLabel;
+    };
+
+    const resetContactSubmitButton = () => {
+      if (!contactSubmitButton) {
+        return;
+      }
+      contactSubmitButton.textContent = contactSubmitButton.dataset.defaultLabel || "Anfrage senden";
+      contactSubmitButton.classList.remove("is-success");
+      contactSubmitButton.dataset.loading = "false";
+      contactSubmitButton.disabled = false;
+    };
+
+    contactForm.addEventListener("input", resetContactSubmitButton);
+    contactForm.addEventListener("change", resetContactSubmitButton);
+
     contactForm.addEventListener("submit", async (event) => {
       event.preventDefault();
 
@@ -2151,11 +2317,19 @@ const init = async () => {
 
       try {
         contactFormStatus.textContent = "Nachricht wird gespeichert...";
+        setSubmitButtonLoading(contactSubmitButton, true);
         await submitContactRequest();
         contactForm.reset();
+        if (contactSubmitButton) {
+          contactSubmitButton.textContent = "Anfrage gesendet";
+          contactSubmitButton.classList.add("is-success");
+          contactSubmitButton.dataset.loading = "false";
+          contactSubmitButton.disabled = false;
+        }
         contactFormStatus.textContent = "Die Nachricht wurde erfolgreich gespeichert.";
       } catch (error) {
         contactFormStatus.textContent = error.message;
+        setSubmitButtonLoading(contactSubmitButton, false);
       }
     });
   }

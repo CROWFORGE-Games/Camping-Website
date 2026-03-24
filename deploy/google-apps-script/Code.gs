@@ -47,6 +47,11 @@ function doPost(e) {
       return jsonResponse({ ok: true });
     }
 
+    if (eventType === 'deleteInquiry') {
+      deleteInquiry(spreadsheet, payload);
+      return jsonResponse({ ok: true });
+    }
+
     return jsonResponse({ ok: false, error: 'Unbekannter eventType.' });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
@@ -149,6 +154,41 @@ function replaceSpots(spreadsheet, payload) {
 
   if (values.length > 0) {
     sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+  }
+}
+
+function deleteInquiry(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Anfragen');
+  const id = String(payload.id || '').trim();
+
+  if (!id) {
+    throw new Error('Keine Anfrage-ID übergeben.');
+  }
+
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) {
+    return;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const idIndex = headers.findIndex(function (header) {
+    return String(header || '').trim() === 'ID';
+  });
+
+  if (idIndex === -1) {
+    throw new Error('Spalte ID wurde im Blatt nicht gefunden.');
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+
+  for (var index = 0; index < values.length; index += 1) {
+    if (String(values[index][idIndex] || '').trim() === id) {
+      sheet.deleteRow(index + 2);
+      return;
+    }
   }
 }
 

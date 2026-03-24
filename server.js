@@ -38,7 +38,7 @@ const BOOKING_RECIPIENT_EMAIL =
 const BOOKING_PHONE = process.env.BOOKING_PHONE || "+43 664 885 305 24";
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
 const RESEND_FROM_EMAIL = String(process.env.RESEND_FROM_EMAIL || "").trim();
-const RESEND_FROM_NAME = String(process.env.RESEND_FROM_NAME || "Hiasen Hof Website").trim();
+const RESEND_FROM_NAME = String(process.env.RESEND_FROM_NAME || "Camping").trim();
 const GOOGLE_APPS_SCRIPT_ENABLED = parseBooleanEnv(process.env.GOOGLE_APPS_SCRIPT_ENABLED, false);
 const GOOGLE_APPS_SCRIPT_WEBHOOK_URL = String(process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || "").trim();
 const GOOGLE_APPS_SCRIPT_TOKEN = String(process.env.GOOGLE_APPS_SCRIPT_TOKEN || "").trim();
@@ -155,6 +155,7 @@ const defaultStore = () => ({
     siteName: "Hiasen Hof am Thiersee",
     bookingRecipientEmail: BOOKING_RECIPIENT_EMAIL,
     bookingPhone: BOOKING_PHONE,
+    senderName: RESEND_FROM_NAME || "Camping",
     vapid: {
       publicKey: VAPID_PUBLIC_KEY,
       privateKey: VAPID_PRIVATE_KEY,
@@ -749,6 +750,13 @@ const syncContactRequestToAppsScript = async (contactRequest) => {
   });
 };
 
+const deleteInquiryFromAppsScript = async (id) => {
+  await postToAppsScript("deleteInquiry", {
+    sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
+    id,
+  });
+};
+
 const syncPitchesToAppsScript = async (pitches) => {
   const rows = [...pitches]
     .sort((a, b) => {
@@ -901,11 +909,14 @@ const sendBookingNotification = async (booking) => {
 
 const isResendConfigured = () => Boolean(RESEND_API_KEY && RESEND_FROM_EMAIL);
 
-const sendResendEmail = async ({ subject, text, replyTo }) => {
+const sendResendEmail = async ({ subject, text, replyTo, to }) => {
   const store = loadStore();
-  const recipient = store.settings.bookingRecipientEmail;
+  const senderName = String(store.settings.senderName || RESEND_FROM_NAME || "Camping").trim();
+  const recipients = Array.isArray(to)
+    ? to.map((entry) => String(entry || "").trim()).filter(Boolean)
+    : [String(to || store.settings.bookingRecipientEmail || "").trim()].filter(Boolean);
 
-  if (!recipient) {
+  if (recipients.length === 0) {
     throw new Error("Keine Empfänger-E-Mail für Anfragen hinterlegt.");
   }
 
@@ -914,8 +925,8 @@ const sendResendEmail = async ({ subject, text, replyTo }) => {
   }
 
   const payload = {
-    from: `${RESEND_FROM_NAME} <${RESEND_FROM_EMAIL}>`,
-    to: [recipient],
+    from: `${senderName} <${RESEND_FROM_EMAIL}>`,
+    to: recipients,
     subject,
     text,
   };
@@ -995,6 +1006,38 @@ const sendContactEmailViaResend = async (contactRequest) => {
     ].join("\n"),
     replyTo: contactRequest.email || undefined,
   });
+};
+
+const sendInquiryReplyViaResend = async (entry, replyMessage) => {
+  const inquiryType = entry.type === "booking" ? "Buchungsanfrage" : "Kontaktanfrage";
+  const summaryLines =
+    entry.type === "booking"
+      ? [
+          `Anreise: ${entry.arrival || "-"}`,
+          `Abreise: ${entry.departure || "-"}`,
+          `Wunschstellplatz: ${entry.preferredPitch || "-"}`,
+        ]
+      : [`Betreff: ${entry.subject || "-"}`];
+
+  const sent = await sendResendEmail({
+    to: entry.email,
+    subject: `Antwort auf Ihre ${inquiryType.toLowerCase()}`,
+    text: [
+      `Guten Tag ${entry.name || ""}`.trim(),
+      "",
+      replyMessage,
+      "",
+      "---",
+      `${inquiryType} vom ${formatDateTimeForDisplay(entry.createdAt)}`,
+      ...summaryLines,
+    ].join("\n"),
+  });
+
+  if (!sent) {
+    throw new Error("Der E-Mail-Versand ist aktuell nicht eingerichtet.");
+  }
+
+  return true;
 };
 
 const sendBookingEmail = async (booking) => {
@@ -1477,6 +1520,75 @@ app.patch("/api/admin/contact-requests/:id", requireAuth, (req, res) => {
   contactRequest.status = String(req.body.status || contactRequest.status);
   writeStore(store);
   res.json({ ok: true, contactRequest });
+});
+
+app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) => {
+  const store = loadStore();
+  const inquiryType = String(req.params.type || "").trim().toLowerCase();
+  const message = String(req.body.message || "").trim();
+
+  if (!message) {
+    res.status(400).json({ error: "Bitte eine Antwort eingeben." });
+    return;
+  }
+
+  const source =
+    inquiryType === "booking"
+      ? store.bookings.find((entry) => entry.id === req.params.id)
+      : inquiryType === "contact"
+        ? store.contactRequests.find((entry) => entry.id === req.params.id)
+        : null;
+
+  if (!source) {
+    res.status(404).json({ error: "Anfrage nicht gefunden." });
+    return;
+  }
+
+  if (!source.email) {
+    res.status(400).json({ error: "Für diese Anfrage ist keine E-Mail-Adresse vorhanden." });
+    return;
+  }
+
+  try {
+    await sendInquiryReplyViaResend({ ...source, type: inquiryType }, message);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Antwort konnte nicht versendet werden." });
+    return;
+  }
+
+  source.repliedAt = new Date().toISOString();
+  source.repliedBy = req.user.email;
+  writeStore(store);
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
+  const store = loadStore();
+  const inquiryType = String(req.params.type || "").trim().toLowerCase();
+  const collectionKey = inquiryType === "booking" ? "bookings" : inquiryType === "contact" ? "contactRequests" : null;
+
+  if (!collectionKey) {
+    res.status(400).json({ error: "Ungültiger Anfragetyp." });
+    return;
+  }
+
+  const entryIndex = store[collectionKey].findIndex((entry) => entry.id === req.params.id);
+
+  if (entryIndex === -1) {
+    res.status(404).json({ error: "Anfrage nicht gefunden." });
+    return;
+  }
+
+  try {
+    await deleteInquiryFromAppsScript(req.params.id);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Anfrage konnte nicht aus Google Sheets gelöscht werden." });
+    return;
+  }
+
+  store[collectionKey].splice(entryIndex, 1);
+  writeStore(store);
+  res.json({ ok: true, id: req.params.id, type: inquiryType });
 });
 
 app.post("/api/admin/upload-image", requireAuth, upload.single("image"), (req, res) => {
