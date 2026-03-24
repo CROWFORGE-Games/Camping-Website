@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.playwright-cli
+.env
+.env.*
+uploads
+data
+README.md
+deploy
