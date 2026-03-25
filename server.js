@@ -815,7 +815,7 @@ const getInquiriesFromAppsScript = async () => {
   const config = appsScriptConfig();
 
   if (!config.enabled) {
-    return [];
+    return null;
   }
 
   try {
@@ -832,7 +832,7 @@ const getInquiriesFromAppsScript = async () => {
       .filter((entry) => entry.id);
   } catch (error) {
     console.error("Anfragen konnten nicht aus Google Sheets gelesen werden.", error);
-    return [];
+    return null;
   }
 };
 
@@ -1478,11 +1478,11 @@ app.get("/api/admin/bootstrap", requireAuth, async (_req, res) => {
   const pitches = await resolvePitchesWithRemoteStatus(store.pitches);
   const remoteInquiries = await getInquiriesFromAppsScript();
   const bookings =
-    remoteInquiries.length > 0
+    Array.isArray(remoteInquiries)
       ? remoteInquiries.filter((entry) => entry.type === "booking").map(({ type, ...entry }) => entry)
       : store.bookings;
   const contactRequests =
-    remoteInquiries.length > 0
+    Array.isArray(remoteInquiries)
       ? remoteInquiries.filter((entry) => entry.type === "contact").map(({ type, ...entry }) => entry)
       : store.contactRequests;
   res.json({
@@ -1779,7 +1779,9 @@ app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
 
   const entryIndex = store[collectionKey].findIndex((entry) => entry.id === req.params.id);
   const remoteInquiries = await getInquiriesFromAppsScript();
-  const existsRemotely = remoteInquiries.some((entry) => entry.type === inquiryType && entry.id === req.params.id);
+  const existsRemotely = Array.isArray(remoteInquiries)
+    ? remoteInquiries.some((entry) => entry.type === inquiryType && entry.id === req.params.id)
+    : false;
 
   if (entryIndex === -1 && !existsRemotely) {
     res.status(404).json({ error: "Anfrage nicht gefunden." });

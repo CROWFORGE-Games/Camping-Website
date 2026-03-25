@@ -1,4 +1,4 @@
-const navToggle = document.querySelector(".nav-toggle");
+﻿const navToggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector(".site-nav");
 const bookingForm = document.querySelector("#booking-form");
 const formStatus = document.querySelector("#form-status");
@@ -617,17 +617,21 @@ const renderSitePlan = () => {
 
     if (freeCountLabel) {
       freeCountLabel.classList.remove("is-good", "is-low", "is-full");
-      if (freeCount === 0) {
-        freeCountLabel.classList.add("is-full");
-      } else if (pitches.length > 0 && freeCount / pitches.length <= 0.4) {
-        freeCountLabel.classList.add("is-low");
+      if (pitches.length === 0) {
+        freeCountLabel.textContent = "Freie Plätze werden gesucht";
       } else {
-        freeCountLabel.classList.add("is-good");
+        if (freeCount === 0) {
+          freeCountLabel.classList.add("is-full");
+        } else if (freeCount / pitches.length <= 0.4) {
+          freeCountLabel.classList.add("is-low");
+        } else {
+          freeCountLabel.classList.add("is-good");
+        }
+        freeCountLabel.textContent =
+          freeCount === 0
+            ? "Keine freien Plätze"
+            : `Noch ${freeCount} freie ${freeCount === 1 ? "Platz" : "Plätze"}`;
       }
-      freeCountLabel.textContent =
-        freeCount === 0
-          ? "Keine freien Plätze"
-          : `Noch ${freeCount} freie ${freeCount === 1 ? "Platz" : "Plätze"}`;
     }
 
     if (grid) {
@@ -1131,10 +1135,6 @@ const editorHtml = `
         <span>Absendername f&uuml;r E-Mails</span>
         <input type="text" id="site-settings-sender-name" placeholder="Camping" required />
       </label>
-      <label class="site-editor-field">
-        <span>Aktuelles Admin-Passwort</span>
-        <input type="password" id="site-settings-admin-password" placeholder="admin" required />
-      </label>
       <div class="site-editor-settings-section">
         <h4>Admin-Passwort ändern</h4>
         <label class="site-editor-field">
@@ -1258,7 +1258,7 @@ const addEditorPencils = () => {
       return;
     }
     element.classList.add("editor-target");
-    const button = createEditorButton("editor-pencil", "✎", (event) => {
+    const button = createEditorButton("editor-pencil", "âœŽ", (event) => {
       event.preventDefault();
       event.stopPropagation();
       openContentEditor(element);
@@ -1272,7 +1272,7 @@ const addEditorPencils = () => {
     }
     element.classList.add("editor-target");
     element.appendChild(
-      createEditorButton("editor-pencil", "✎", (event) => {
+      createEditorButton("editor-pencil", "âœŽ", (event) => {
         event.preventDefault();
         event.stopPropagation();
         openLinksEditor(element);
@@ -1595,7 +1595,7 @@ const renderContactRequests = () => {
           <div class="site-contact-request-header">
             <div>
               <strong>${escapeHtml(entry.title || entry.name || "Unbekannt")}</strong>
-              <p>${escapeHtml(entry.inquiryType || "Anfrage")} · ${escapeHtml(entry.subtitle || "-")}</p>
+              <p>${escapeHtml(entry.inquiryType || "Anfrage")} Â· ${escapeHtml(entry.subtitle || "-")}</p>
             </div>
             <span class="status-chip ${entry.status === "done" ? "reserved" : "free"}">${entry.status === "done" ? "Erledigt" : "Neu"}</span>
           </div>
@@ -1749,6 +1749,16 @@ const setEditorStatusMessage = (message) => {
   }
 };
 
+const getAdminDisplayEmail = () => {
+  const sessionEmail = String(editorState.session?.user?.email || "").trim();
+
+  if (sessionEmail && sessionEmail !== "admin@local.test") {
+    return sessionEmail;
+  }
+
+  return String(bootstrapData.settings.bookingRecipientEmail || defaultBootstrap.settings.bookingRecipientEmail || sessionEmail).trim();
+};
+
 const bindPitchDrag = () => {
   if (!editorState.active || !pitchDetailMap) {
     return;
@@ -1830,7 +1840,6 @@ const initPublicEditor = async () => {
   const bookingEmailInput = document.querySelector("#site-settings-booking-email");
   const bookingPhoneInput = document.querySelector("#site-settings-booking-phone");
   const senderNameInput = document.querySelector("#site-settings-sender-name");
-  const adminPasswordInput = document.querySelector("#site-settings-admin-password");
   const currentPasswordInput = document.querySelector("#site-settings-current-password");
   const newPasswordInput = document.querySelector("#site-settings-new-password");
   const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
@@ -1893,7 +1902,7 @@ const initPublicEditor = async () => {
       editorState.panelOpen = localStorage.getItem("siteEditorPanelOpen") === "1";
       panel.hidden = !editorState.panelOpen;
       loginForm.reset();
-      userText.textContent = `${editorState.session.user.email} - ${editorState.session.user.role}`;
+      userText.textContent = getAdminDisplayEmail();
       loginStatus.textContent = "";
       return;
     }
@@ -2069,7 +2078,6 @@ const initPublicEditor = async () => {
       bootstrapData.settings.bookingRecipientEmail || defaultBootstrap.settings.bookingRecipientEmail;
     bookingPhoneInput.value = bootstrapData.settings.bookingPhone || defaultBootstrap.settings.bookingPhone;
     senderNameInput.value = bootstrapData.settings.senderName || defaultBootstrap.settings.senderName;
-    adminPasswordInput.value = bootstrapData.settings.adminPassword || defaultBootstrap.settings.adminPassword;
     clearPasswordInputs();
     settingsModal.hidden = false;
   });
@@ -2078,8 +2086,7 @@ const initPublicEditor = async () => {
     const bookingRecipientEmail = String(bookingEmailInput.value || "").trim();
     const bookingPhone = String(bookingPhoneInput.value || "").trim();
     const senderName = String(senderNameInput.value || "").trim();
-    const adminPassword = String(adminPasswordInput.value || "").trim();
-    const requiredSettings = [bookingRecipientEmail, bookingPhone, senderName, adminPassword];
+    const requiredSettings = [bookingRecipientEmail, bookingPhone, senderName];
     if (requiredSettings.some((value) => !String(value || "").trim())) {
       const status = document.querySelector("#site-editor-status");
       if (status) {
@@ -2089,7 +2096,7 @@ const initPublicEditor = async () => {
     }
     const result = await publicApi("/api/admin/settings", {
       method: "PUT",
-      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, senderName, adminPassword }),
+      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, senderName }),
     });
     bootstrapData.settings = {
       ...bootstrapData.settings,
@@ -2132,9 +2139,6 @@ const initPublicEditor = async () => {
       ...bootstrapData.settings,
       adminPassword: newPassword,
     };
-    if (adminPasswordInput) {
-      adminPasswordInput.value = newPassword;
-    }
     clearPasswordInputs();
     if (status) {
       status.textContent = "Admin-Passwort gespeichert.";
@@ -2392,3 +2396,6 @@ const init = async () => {
 };
 
 init();
+
+
+
