@@ -33,6 +33,13 @@ function doGet(e) {
       });
     }
 
+    if (eventType === 'prices') {
+      return jsonResponse({
+        ok: true,
+        rows: readPrices(spreadsheet, String(params.sheetName || 'Preise')),
+      });
+    }
+
     return jsonResponse({ ok: false, error: 'Unbekannter eventType.' });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
@@ -73,6 +80,11 @@ function doPost(e) {
 
     if (eventType === 'saveSettings') {
       saveSettings(spreadsheet, payload);
+      return jsonResponse({ ok: true });
+    }
+
+    if (eventType === 'savePrices') {
+      savePrices(spreadsheet, payload);
       return jsonResponse({ ok: true });
     }
 
@@ -187,6 +199,31 @@ function replaceSpots(spreadsheet, payload) {
   const headers = ['Stellplatz', 'Stellplatznummer', 'Status'];
   const values = rows.map(function (row) {
     return [row.stellplatz || '', row.stellplatznummer || '', row.status || ''];
+  });
+
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  sheet.clearContents();
+  writeHeaders(sheet, headers);
+
+  if (values.length > 0) {
+    sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+  }
+}
+
+function savePrices(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Preise');
+  const prices = Array.isArray(payload.prices) ? payload.prices : [];
+  const headers = ['Key', 'Label', 'Amount', 'Category', 'Unit', 'BookingOption', 'SelectionValue'];
+  const values = prices.map(function (price) {
+    return [
+      price.key || '',
+      price.label || '',
+      price.amount || 0,
+      price.category || '',
+      price.unit || '',
+      price.bookingOption ? 'true' : 'false',
+      price.selectionValue || '',
+    ];
   });
 
   const sheet = getOrCreateSheet(spreadsheet, sheetName);
@@ -357,6 +394,36 @@ function readSpots(spreadsheet, sheetName) {
       stellplatz: row[indexByHeader['Stellplatz']] || '',
       stellplatznummer: row[indexByHeader['Stellplatznummer']] || '',
       status: row[indexByHeader['Status']] || '',
+    };
+  });
+}
+
+function readPrices(spreadsheet, sheetName) {
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) {
+    return [];
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+  const indexByHeader = {};
+
+  headers.forEach(function (header, index) {
+    indexByHeader[String(header || '').trim()] = index;
+  });
+
+  return values.map(function (row) {
+    return {
+      key: row[indexByHeader['Key']] || '',
+      label: row[indexByHeader['Label']] || '',
+      amount: row[indexByHeader['Amount']] || 0,
+      category: row[indexByHeader['Category']] || '',
+      unit: row[indexByHeader['Unit']] || '',
+      bookingOption: row[indexByHeader['BookingOption']] || '',
+      selectionValue: row[indexByHeader['SelectionValue']] || '',
     };
   });
 }

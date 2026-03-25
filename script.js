@@ -21,6 +21,18 @@ const pitchDetailSubtitle = document.querySelector("#pitch-detail-subtitle");
 const pitchDetailCloseButtons = document.querySelectorAll("[data-detail-close]");
 const pitchTemplates = document.querySelectorAll(".pitch-template-store template");
 const pricingTable = document.querySelector(".pricing-table");
+const LANGUAGE_STORAGE_KEY = "siteLanguage";
+const originalTextNodeContent = new WeakMap();
+let currentLanguage = (() => {
+  const queryLanguage = new URLSearchParams(window.location.search).get("lang");
+  if (queryLanguage === "de" || queryLanguage === "en") {
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, queryLanguage);
+    return queryLanguage;
+  }
+
+  const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return storedLanguage === "en" ? "en" : "de";
+})();
 
 const currencyFormatter = new Intl.NumberFormat("de-AT", {
   style: "currency",
@@ -95,6 +107,7 @@ let activeDetailReadonly = false;
 let liveRefreshTimer = null;
 
 const formatCurrency = (value) => currencyFormatter.format(value);
+const t = (de, en) => (currentLanguage === "en" ? en : de);
 const findPrice = (key) => Number(bootstrapData.prices.find((price) => price.key === key).amount || 0);
 const escapeHtml = (value) =>
   String(value || "")
@@ -128,6 +141,156 @@ const formatDateTimeDisplay = (value) => {
   );
 
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+};
+
+const translatePriceLabel = (label) =>
+  ({
+    "Erwachsener ab 15 Jahre": "Adult from 15 years",
+    "Kurtaxe pro Erwachsenem": "Tourist tax per adult",
+    "Kind 5 bis 14 Jahre": "Child 5 to 14 years",
+    Wohnmobil: "Motorhome",
+    "Wohnwagen mit PKW": "Caravan with car",
+    "Transporter / Bus": "Van / Bus",
+    "Auto / Caddy": "Car / Caddy",
+    Motorrad: "Motorcycle",
+    "Zelt bis 4 Personen": "Tent up to 4 people",
+    "Zelt ab 5 Personen": "Tent from 5 people",
+    Hund: "Dog",
+    "Strom pauschal": "Electricity flat rate",
+    "Umweltgebühr pro Nacht": "Environmental fee per night",
+    "Stellplätze am See Zuschlag pro Nacht": "Lake pitch surcharge per night",
+    "Stellplätze am See Zuschlag ab einer Woche": "Lake pitch surcharge from one week",
+    "Eine Nacht in der Hauptsaison Juli / August": "One night in high season July / August",
+  }[label] || label);
+
+const TEXT_TRANSLATIONS = {
+  "Alle wichtigen Hinweise zu Anreise, Ausstattung, Seezugang, Kantine und Reservierung.": "All important information about arrival, facilities, lake access, canteen and reservations.",
+  "Den Campingplatz erreichen Sie mühelos über Kufstein oder über die bayrische Grenze, wenn Sie über Bayrischzell anreisen.": "You can easily reach the campsite via Kufstein or via the Bavarian border when arriving through Bayrischzell.",
+  "Direkt vor Ort": "Right on site",
+  "Unser Platz verbindet Seezugang, praktische Ausstattung und eine entspannte Atmosphäre mit kurzen Wegen vor Ort.": "Our campsite combines direct lake access, practical facilities and a relaxed atmosphere with short walking distances on site.",
+  "Ausstattung": "Facilities",
+  "Unser Campingplatz verfügt über Sanitäranlagen, Waschmaschine und Trockner, Stromanschlüssen, einer Mülltrennstation, einer Chemietoilette, Nachtbeleuchtung, Telefonzelle und einen Spielplatz für die Kinder.": "Our campsite offers sanitary facilities, washing machine and dryer, electricity hookups, waste separation, a chemical toilet, night lighting, a telephone booth and a playground for children.",
+  "Seezugang": "Lake access",
+  "Es gibt einen eigenen Zugang zum See. Achtung: Auf der Liegewiese direkt am See ist eine Badekarte notwendig. Für das Liegen am reservierten Platz natürlich nicht. Eine Saisonkarte können Sie bei uns in der Kantine erwerben.": "There is direct access to the lake. Please note: a bathing pass is required for the lakeside lawn itself. Of course not for staying at your reserved pitch. A season pass can be purchased at our canteen.",
+  "Kantine": "Canteen",
+  "Ebenso können Sie jederzeit bei uns in der Kantine in der Hochsaison täglich ab 10:00 Uhr eine Erfrischung zu sich nehmen, eine Kleinigkeit essen oder sich bei einem leckeren Eis abkühlen.": "You can also stop by our canteen at any time, open daily from 10:00 during high season, for refreshments, a snack or a good ice cream.",
+  "Grillen": "Barbecue rules",
+  "Seit dem 15.04.22 darf auf allen Campingplätzen in Tirol nur noch mit Gas- oder Elektrogriller gegrillt werden. Gasgriller benötigen eine Überprüfung der Ventile und Anschlüsse spätestens nach allen zwei Jahren. Das Grillen mit Holzkohle und offenem Feuer ist nicht mehr gestattet.": "Since 15/04/22, only gas or electric barbecues are permitted on campsites in Tyrol. Gas barbecues require inspection of valves and connections at least every two years. Charcoal and open-fire barbecues are no longer allowed.",
+  "Reservierung": "Reservation",
+  "Wir bitten Sie in der Hochsaison wenn es möglich ist zu reservieren unter info@hiasenhof-thiersee.at. Ihren Wunschplatz können Sie gerne angeben.": "During high season we kindly ask you to reserve in advance where possible at info@hiasenhof-thiersee.at. You are welcome to mention your preferred pitch.",
+  "Bezahlung": "Payment",
+  "Die Rechnung bitte immer bei Ankunft oder einen Tag vor Abreise bis spätestens 18:00 Uhr begleichen.": "Please settle the invoice on arrival or one day before departure by 18:00 at the latest.",
+  "Anreise / Abreise": "Arrival / Departure",
+  "Anreise ab 10:00 Uhr, Abreise bis 10:00 Uhr in der Hochsaison, also im Juli und August.": "Arrival from 10:00, departure by 10:00 during high season, meaning July and August.",
+  "Sommer und Winter gleich stark gedacht": "Summer and winter equally well considered",
+  "Thiersee ist Ausgangspunkt für viele Sport- und Freizeitmöglichkeiten. Hier sind sie sauber nach Saison geordnet.": "Thiersee is the starting point for many sports and leisure opportunities. Here they are neatly organised by season.",
+  "Badestrand und Seezeit": "Beach and lake time",
+  "Direkt vom Platz ans Wasser, mit kurzen Wegen für entspannte Tage ohne Logistikstress.": "From your pitch straight to the water, with short distances for relaxed days without logistical stress.",
+  "Wandern und Bergwelten": "Hiking and mountain landscapes",
+  "Viele Touren starten direkt rund um Thiersee und machen den Platz zum unkomplizierten Basislager.": "Many tours start directly around Thiersee and make the campsite an uncomplicated base camp.",
+  "Kufstein als Tagesziel": "Kufstein as a day-trip destination",
+  "Altstadt, Festung, Glasbläserei Riedel und ein schneller Stadtbummel sind leicht erreichbar.": "The old town, fortress, Riedel glassworks and a quick city stroll are all easy to reach.",
+  "Ganzjährig geöffnet": "Open all year",
+  "Sommer- und Winteraufenthalte sind möglich und geben dem Platz auch außerhalb der Hauptsaison Relevanz.": "Summer and winter stays are both possible and make the campsite attractive even outside the main season.",
+  "Ruhiger Rückzugsort": "Quiet retreat",
+  "Wenn der See und die Berglandschaft winterlicher werden, wirkt der Platz eher still und reduziert als hektisch.": "When the lake and mountain scenery become more wintry, the campsite feels calm and reduced rather than hectic.",
+  "Flexible Ausflüge": "Flexible excursions",
+  "Auch in der kalten Jahreszeit bleiben Kufstein und das Thierseetal sinnvolle Ziele für kleine Tagesprogramme.": "Even in the colder season, Kufstein and the Thiersee valley remain worthwhile destinations for small day plans.",
+  "Die offiziellen Empfehlungen des Hiasen Hofs jetzt direkt unten als klickbare Links gesammelt.": "The official Hiasen Hof recommendations are now collected directly below as clickable links.",
+  "Ausflugsziele": "Excursion destinations",
+  "Kulturstätten": "Cultural sites",
+  "Freizeitparks": "Leisure parks",
+  "Sport": "Sports",
+  "Alle Tagespreise auf einen Blick": "All daily prices at a glance",
+  "Die Preisübersicht gilt ab 01.05.2025.": "The price overview is valid from 01/05/2025.",
+  "Zusätzliche Hinweise": "Additional notes",
+  "Stellplätze am See: plus EUR 2,00 pro Nacht, bei einer Woche EUR 10,00 Aufschlag": "Lake pitches: plus EUR 2.00 per night, EUR 10.00 surcharge from one week.",
+  "Eine Nacht in der Hauptsaison Juli und August: plus EUR 2,00 pro Nacht": "One night during high season in July and August: plus EUR 2.00 per night.",
+  "Kinder unter 5 Jahren sind laut aktueller Preisinfo frei": "According to the current price information, children under 5 stay free.",
+  "Freie Stellplätze": "Free pitches",
+  "Downloads und Dauercamping": "Downloads and seasonal camping",
+  "Lageplan herunterladen": "Download site map",
+  "oder per E-Mail für Warteliste und Sommerstellplätze anfragen.": "or ask by email for the waiting list and summer pitches.",
+  "Buchungsanfrage direkt vorbereiten": "Prepare your booking request directly",
+  "Freien Wunschplatz auswählen, Hinweise prüfen und die Anfrage direkt an den Hiasen Hof übermitteln. Verbindlich wird die Buchung erst mit Rückantwort.": "Choose your preferred free pitch, review the notes and send your request directly to Hiasen Hof. The booking only becomes binding once you receive a reply.",
+  "Wunschplatz": "Preferred pitch",
+  "Freien Stellplatz direkt auswählen": "Choose your free pitch directly",
+  "Weiße Plätze sind frei und können direkt gewählt werden. Orange Plätze sind reserviert und rote Plätze aktuell besetzt.": "White pitches are free and can be selected directly. Orange pitches are reserved and red pitches are currently occupied.",
+  "Hinweise zur Anfrage": "Request notes",
+  "Die Buchung wird erst durch unsere Rückantwort wirksam.": "The booking only becomes valid after our reply.",
+  "Bei kurzfristigen Buchungen für denselben Tag bitte anrufen.": "For short-notice bookings for the same day, please call us.",
+  "Für Hauptsaison in Juli und August sowie für Gruppenbuchungen ist eine Anzahlung nötig.": "For the high season in July and August and for group bookings, a deposit is required.",
+  "Spontane Anreisen ohne Anzahlung sind jederzeit möglich.": "Spontaneous arrivals without a deposit are possible at any time.",
+  "Für Gäste mit nur einer Nacht in der Hauptsaison sind keine Reservierungen notwendig.": "For guests staying only one night during high season, reservations are not necessary.",
+  "Kontakt und Reservierung": "Contact and reservation",
+  "Anfragen zu Reservierungen und Buchungen werden direkt über das Formular gespeichert. In dringenden Fällen ist telefonische Rückfrage natürlich ebenfalls möglich.": "Reservation and booking requests are stored directly via the form. In urgent cases, a phone call is of course also possible.",
+  "Buchungsdaten": "Booking details",
+  "Pflichtfelder sind markiert. Der Wunschplatz wird direkt mit der Anfrage übermittelt.": "Required fields are marked. The preferred pitch is sent directly with the request.",
+  "Name": "Name",
+  "Straße": "Street",
+  "PLZ / Ort": "ZIP / City",
+  "Land": "Country",
+  "E-Mail": "Email",
+  "Telefon": "Phone",
+  "Anreise": "Arrival",
+  "Abreise": "Departure",
+  "Anzahl Personen": "Number of guests",
+  "Erwachsene": "Adults",
+  "Kinder": "Children",
+  "Alter der Kinder": "Children's ages",
+  "Geschätzter Gesamtpreis": "Estimated total price",
+  "Preisrechner": "Price calculator",
+  "Richtwert auf Basis der aktuellen Preisseite. Kinder werden hier als 5 bis 14 Jahre gerechnet; Kinder unter 5 Jahren sind laut Preisinfo frei.": "Estimated value based on the current price page. Children are calculated here as 5 to 14 years old; according to the price information, children under 5 stay free.",
+  "Zusätzliche Informationen / spezielle Wünsche": "Additional information / special requests",
+  "Anfrage senden": "Send request",
+  "Die wichtigsten Bereiche auf einen Blick": "The most important areas at a glance",
+  "Alle wichtigen Themen sind hier kurz gebündelt, damit Gäste schnell zur passenden Seite für Aufenthalt, Preise, Anfrage und Anreise finden.": "All key topics are briefly collected here so guests can quickly find the right page for their stay, prices, request and directions.",
+  "Ausstattung, Seezugang, Kantine, Regeln und alle praktischen Hinweise zum Aufenthalt.": "Facilities, lake access, canteen, rules and all practical information for your stay.",
+  "Sommer und Winter sowie Ausflugsziele, Kultur, Freizeitparks und Sport in der Umgebung.": "Summer and winter as well as excursions, culture, leisure parks and sports in the surrounding area.",
+  "Alle Tagespreise kompakt in einer sauber lesbaren Übersicht.": "All daily prices in a compact and clearly readable overview.",
+  "Formular ausfüllen und Wunschstellplatz direkt mit der Anfrage übermitteln.": "Fill out the form and send your preferred pitch directly with the request.",
+  "Adresse, Karte und Anfahrtsbeschreibung getrennt auf einer eigenen Seite.": "Address, map and directions clearly separated on their own page.",
+  "Adresse, Karte und Wege zum Platz": "Address, map and routes to the campsite",
+  "Adresse, Karte und Anfahrtsinfos sind hier auf einer eigenen Seite konzentriert und klarer lesbar aufbereitet.": "Address, map and arrival information are concentrated here on a dedicated page and prepared in a clearer way.",
+  "Von München kommend": "Arriving from Munich",
+  "Über die A8 Richtung Salzburg, dann am Dreieck Inntal auf die A93 Richtung Kufstein / Innsbruck.": "Take the A8 towards Salzburg, then at Dreieck Inntal continue onto the A93 towards Kufstein / Innsbruck.",
+  "Weiter auf die A12, Ausfahrt Kufstein Nord nehmen und der Beschilderung nach Thiersee folgen.": "Continue on the A12, take the Kufstein Nord exit and follow the signs to Thiersee.",
+  "Bis Kufstein Süd besteht keine Vignettenpflicht.": "No motorway vignette is required up to Kufstein Süd.",
+  "Von Bayrischzell kommend": "Arriving from Bayrischzell",
+  "Über die B307 Richtung Bayrischzell und dann auf die Tiroler Straße abbiegen.": "Take the B307 towards Bayrischzell and then turn onto the Tyrolean road.",
+  "Der Landstraße rund 11 km Richtung Vorderthiersee folgen.": "Follow the country road for about 11 km towards Vorderthiersee.",
+  "Kontaktformular": "Contact form",
+  "Allgemeine Fragen können hier direkt übermittelt werden. Die Nachricht wird intern gespeichert und ist in der Admin-Konsole sichtbar.": "General questions can be sent directly here. The message is stored internally and is visible in the admin console.",
+  "Muss ich reservieren": "Do I need a reservation",
+  "In der Hochsaison ist Reservierung sinnvoll. Für denselben Tag bitte anrufen.": "During high season, making a reservation is recommended. For the same day, please call us.",
+  "Wie funktioniert die Buchung": "How does booking work",
+  "Die Anfrage wird gesendet, verbindlich wird sie erst mit Rückantwort vom Hiasen Hof.": "The request is sent, but it only becomes binding once you receive a reply from Hiasen Hof.",
+  "Impressum": "Legal notice",
+  "Verantwortlich für den Inhalt und rechtliche Hinweise zum Onlineangebot.": "Responsible for the content and legal information on the online offering.",
+  "Verantwortlich für den Inhalt": "Responsible for content",
+  "Bankverbindung": "Bank details",
+  "Inhalt des Onlineangebotes": "Content of the online offering",
+  "Verweise und Links": "References and links",
+  "Urheber- und Kennzeichenrecht": "Copyright and trademark law",
+  "Rechtswirksamkeit dieses Haftungsausschlusses": "Legal validity of this disclaimer",
+};
+
+const ATTRIBUTE_TRANSLATIONS = {
+  "Allgemeine Anfrage": "General inquiry",
+  "Ihre Nachricht an den Hiasen Hof": "Your message to Hiasen Hof",
+  "Späte Anreise, weitere Infos": "Late arrival, further information",
+  "z. B. 4,8 oder 4 8": "e.g. 4,8 or 4 8",
+  "Buchungsanfrage für den Hiasen Hof direkt online vorbereiten und intern übermitteln.": "Prepare your booking request for Hiasen Hof online and send it internally.",
+  "Preisübersicht des Hiasen Hofs mit Tagespreisen und Zusatzhinweisen.": "Price overview of Hiasen Hof with daily rates and additional notes.",
+  "Adresse, Karte und Anfahrtsbeschreibung für den Hiasen Hof am Thiersee.": "Address, map and arrival directions for Hiasen Hof at Lake Thiersee.",
+  "Sommer- und Winteraktivitäten sowie Ausflugsziele rund um Thiersee und Kufstein.": "Summer and winter activities as well as excursion destinations around Thiersee and Kufstein.",
+  "Impressum und rechtliche Hinweise des Hiasen Hofs am Thiersee.": "Legal notice and legal information for Hiasen Hof at Lake Thiersee.",
+  "Alle wichtigen Informationen zum Campingplatz des Hiasen Hofs am Thiersee.": "All important information about the Hiasen Hof campsite at Lake Thiersee.",
+  "Wiese 1 Detailansicht": "Wiese 1 detailed view",
+  "Wiese 2 Detailansicht": "Wiese 2 detailed view",
+  "Wiese 3 Detailansicht": "Wiese 3 detailed view",
+  "Seeplätze Detailansicht": "Lake pitches detailed view",
+  "Suche freie Plätze": "Searching free pitches",
 };
 
 const zoneDetailMeta = {
@@ -258,7 +421,10 @@ const fallbackPitchLayouts = {
 const getZoneDisplayName = (zone) => normalizedZoneMeta[zone]?.title || zoneDetailMeta[zone]?.title || zone;
 const formatPitchLabel = (zone, number) => `${getZoneDisplayName(zone)}, Stellplatz ${number}`;
 const getPitchTemplate = (zone) => document.querySelector(`#pitch-template-${zone}`);
-const getPriceLabel = (key, fallback) => bootstrapData.prices.find((price) => price.key === key)?.label || fallback;
+const getPriceLabel = (key, fallback) => {
+  const label = bootstrapData.prices.find((price) => price.key === key)?.label || fallback;
+  return currentLanguage === "en" ? translatePriceLabel(label) : label;
+};
 const getFallbackLayout = (zone) => fallbackPitchLayouts[zone] || [];
 const isBookingOptionPrice = (price) =>
   typeof price.bookingOption === "boolean"
@@ -405,8 +571,8 @@ const updateEstimatePitch = (preferredPitch) => {
   }
 
   selectedPitchEstimateElement.textContent = preferredPitch
-    ? `Platz: ${preferredPitch}`
-    : "Platz: Noch kein Wunschstellplatz ausgewählt.";
+    ? `${t("Platz", "Pitch")}: ${preferredPitch}`
+    : `${t("Platz", "Pitch")}: ${t("Noch kein Wunschstellplatz ausgewählt.", "No preferred pitch selected yet.")}`;
 };
 
 const updateChildrenAgeWarning = (invalidAgeCount) => {
@@ -415,7 +581,7 @@ const updateChildrenAgeWarning = (invalidAgeCount) => {
   }
 
   childrenAgeWarningElement.textContent =
-    invalidAgeCount > 0 ? "Bitte Personen ab 15 Jahren als Erwachsene eintragen." : "";
+    invalidAgeCount > 0 ? t("Bitte Personen ab 15 Jahren als Erwachsene eintragen.", "Please enter guests aged 15 and above as adults.") : "";
 };
 
 const renderEstimate = ({ total, nights, breakdown, message }) => {
@@ -432,7 +598,7 @@ const renderEstimate = ({ total, nights, breakdown, message }) => {
     const listItem = document.createElement("li");
     const label = document.createElement("span");
     const amount = document.createElement("span");
-    label.textContent = "Noch keine berechenbaren Reisedaten";
+    label.textContent = t("Noch keine berechenbaren Reisedaten", "No billable travel dates yet");
     amount.textContent = formatCurrency(0);
     listItem.append(label, amount);
     priceBreakdownElement.appendChild(listItem);
@@ -480,26 +646,26 @@ const updateBookingEstimate = () => {
       total: 0,
       nights,
       breakdown,
-      message: "Bitte An- und Abreise wählen, damit der Preis berechnet werden kann.",
+      message: t("Bitte An- und Abreise wählen, damit der Preis berechnet werden kann.", "Please select arrival and departure so the price can be calculated."),
     });
     return 0;
   }
 
   appendBreakdownItem(
     breakdown,
-    `${adults} x ${getPriceLabel("adult", "Erwachsener ab 15 Jahre")} + ${getPriceLabel("touristTaxAdult", "Kurtaxe")} x ${nights} Nächte`,
+    `${adults} x ${getPriceLabel("adult", t("Erwachsener ab 15 Jahre", "Adult from 15 years"))} + ${getPriceLabel("touristTaxAdult", t("Kurtaxe", "Tourist tax"))} x ${nights} ${t("Nächte", "nights")}`,
     adults * nights * (findPrice("adult") + findPrice("touristTaxAdult")),
   );
 
   appendBreakdownItem(
     breakdown,
-    `${children} x ${getPriceLabel("child", "Kind 5 bis 14 Jahre")} x ${nights} Nächte`,
+    `${children} x ${getPriceLabel("child", t("Kind 5 bis 14 Jahre", "Child 5 to 14 years"))} x ${nights} ${t("Nächte", "nights")}`,
     children * nights * findPrice("child"),
   );
 
   if (freeChildren > 0) {
     breakdown.push({
-      label: `${freeChildren} ${freeChildren === 1 ? "Kind" : "Kinder"} unter 5 Jahren`,
+      label: `${freeChildren} ${freeChildren === 1 ? t("Kind", "child") : t("Kinder", "children")} ${t("unter 5 Jahren", "under 5 years")}`,
       amount: 0,
     });
   }
@@ -515,18 +681,18 @@ const updateBookingEstimate = () => {
 
     appendBreakdownItem(
       breakdown,
-      `${getPriceLabel(price.key, price.label)} x ${nights} Nächte`,
+      `${getPriceLabel(price.key, price.label)} x ${nights} ${t("Nächte", "nights")}`,
       Number(price.amount || 0) * nights,
     );
   });
 
-  if (preferredPitch.startsWith("Seeplätze") || preferredPitch.startsWith("Seeplatz")) {
+  if (preferredPitch.startsWith("Seeplätze") || preferredPitch.startsWith("Seeplatz") || preferredPitch.startsWith("Lake")) {
     const seeSurcharge = nights >= 7 ? findPrice("seeWeek") : nights * findPrice("seeNight");
     appendBreakdownItem(
       breakdown,
       nights >= 7
-        ? getPriceLabel("seeWeek", "Seeplatz-Aufschlag ab einer Woche")
-        : `${getPriceLabel("seeNight", "Seeplatz-Aufschlag")} x ${nights} Nächte`,
+        ? getPriceLabel("seeWeek", t("Seeplatz-Aufschlag ab einer Woche", "Lake pitch surcharge from one week"))
+        : `${getPriceLabel("seeNight", t("Seeplatz-Aufschlag", "Lake pitch surcharge"))} x ${nights} ${t("Nächte", "nights")}`,
       seeSurcharge,
     );
   }
@@ -534,7 +700,7 @@ const updateBookingEstimate = () => {
   if (nights === 1 && stayTouchesHighSeason(arrival, nights)) {
     appendBreakdownItem(
       breakdown,
-      getPriceLabel("oneNightHighSeason", "Kurzaufenthalt Juli / August"),
+      getPriceLabel("oneNightHighSeason", t("Kurzaufenthalt Juli / August", "Short stay July / August")),
       findPrice("oneNightHighSeason"),
     );
   }
@@ -545,7 +711,7 @@ const updateBookingEstimate = () => {
     total,
     nights,
     breakdown,
-    message: `${nights} ${nights === 1 ? "Nacht" : "Nächte"} berechnet.`,
+    message: `${nights} ${nights === 1 ? t("Nacht", "night") : t("Nächte", "nights")} ${t("berechnet.", "calculated.")}`,
   });
 
   return total;
@@ -560,7 +726,7 @@ const renderPricingTable = () => {
     .map(
       (price) => `
         <div class="pricing-row">
-          <span>${price.label}</span>
+          <span>${currentLanguage === "en" ? translatePriceLabel(price.label) : price.label}</span>
           <strong>${formatCurrency(Number(price.amount || 0))}</strong>
         </div>
       `,
@@ -581,7 +747,7 @@ const renderBookingPitchOptions = () => {
     .map((price) => {
       const value = getPitchOptionValue(price);
       const checked = selectedValues.has(value) ? ' checked=""' : "";
-      return `<label><input type="checkbox" name="pitch" value="${value}"${checked}> ${price.label}</label>`;
+      return `<label><input type="checkbox" name="pitch" value="${value}"${checked}> ${currentLanguage === "en" ? translatePriceLabel(price.label) : price.label}</label>`;
     })
     .join("");
 };
@@ -611,14 +777,15 @@ const renderSitePlan = () => {
     if (info) {
       info.textContent =
         pitches.length > 0
-          ? `Plätze ${pitches[0].number} bis ${pitches[pitches.length - 1].number}`
-          : "Keine aktiven Plätze";
+          ? `${t("Plätze", "Pitches")} ${pitches[0].number} ${t("bis", "to")} ${pitches[pitches.length - 1].number}`
+          : t("Keine aktiven Plätze", "No active pitches");
     }
 
     if (freeCountLabel) {
-      freeCountLabel.classList.remove("is-good", "is-low", "is-full");
+      freeCountLabel.classList.remove("is-good", "is-low", "is-full", "is-loading");
       if (pitches.length === 0) {
-        freeCountLabel.textContent = "Freie Plätze werden gesucht";
+        freeCountLabel.classList.add("is-loading");
+        freeCountLabel.textContent = t("Suche freie Plätze", "Searching free pitches");
       } else {
         if (freeCount === 0) {
           freeCountLabel.classList.add("is-full");
@@ -629,8 +796,8 @@ const renderSitePlan = () => {
         }
         freeCountLabel.textContent =
           freeCount === 0
-            ? "Keine freien Plätze"
-            : `Noch ${freeCount} freie ${freeCount === 1 ? "Platz" : "Plätze"}`;
+            ? t("Keine freien Plätze", "No free pitches")
+            : `${t("Still", "Still")} ${freeCount} ${t("freie", "free")} ${freeCount === 1 ? t("Platz", "pitch") : t("Plätze", "pitches")}`;
       }
     }
 
@@ -981,6 +1148,9 @@ const editorState = {
   panelOpen: false,
 };
 
+const AUTH_CACHE_KEY = "siteEditorHasSession";
+const AUTH_CACHE_EMAIL_KEY = "siteEditorUserEmail";
+
 const pageSlugFromPath = () => {
   const file = window.location.pathname.split("/").pop() || "index.html";
   const map = {
@@ -995,6 +1165,267 @@ const pageSlugFromPath = () => {
     "impressum.html": "impressum",
   };
   return map[file] || "index";
+};
+
+const STATIC_TRANSLATIONS = {
+  common: [
+    { selector: ".nav-toggle", text: "Menu" },
+    { selector: '.site-nav a[href="./index.html"]', text: "Home" },
+    { selector: '.site-nav a[href="./campingplatz.html"]', text: "Campsite" },
+    { selector: '.site-nav a[href="./erlebnisse.html"]', text: "Activities" },
+    { selector: '.site-nav a[href="./preise.html"]', text: "Prices" },
+    { selector: '.site-nav a[href="./buchen.html"]:not(.nav-cta)', text: "Book" },
+    { selector: '.site-nav a[href="./anreise.html"]', text: "Directions" },
+    { selector: ".nav-cta", text: "Book now" },
+    { selector: ".footer-brand .eyebrow", text: "Contact" },
+    { selector: ".footer-links a[href=\"./campingplatz.html\"]", text: "Campsite" },
+    { selector: ".footer-links a[href=\"./erlebnisse.html\"]", text: "Activities" },
+    { selector: ".footer-links a[href=\"./preise.html\"]", text: "Prices" },
+    { selector: ".footer-links a[href=\"./buchen.html\"]", text: "Book" },
+    { selector: ".footer-links a[href=\"./anreise.html\"]", text: "Directions" },
+    { selector: ".footer-links a[href=\"./impressum.html\"]", text: "Legal notice" },
+  ],
+  index: [
+    { selector: "title", text: "Hiasen Hof at Lake Thiersee" },
+    { selector: 'meta[name="description"]', attr: "content", text: "Camping at Lake Thiersee with clear information on campsite, activities, prices, booking and directions." },
+    { selector: ".hero-home-copy .eyebrow", text: "Family-run. Right by the lake. Open all year." },
+    { selector: ".hero-home-copy p:not(.eyebrow)", text: "Direct lake access, a family-run campsite in Thiersee and all key information clearly organised on dedicated pages." },
+    { selector: ".hero-actions .button-primary", text: "Start booking request" },
+    { selector: ".hero-actions .button-secondary", text: "View activities" },
+    { selector: ".intro-band .eyebrow", text: "Quick overview" },
+    { selector: ".intro-band h2", text: "The most important areas at a glance" },
+    { selector: ".intro-band .section-heading p:last-child", text: "All key topics are bundled here so guests can quickly find the right page for their stay, prices, requests and directions." },
+  ],
+  campingplatz: [
+    { selector: "title", text: "Campsite | Hiasen Hof at Lake Thiersee" },
+    { selector: 'meta[name="description"]', attr: "content", text: "All important information about the Hiasen Hof campsite at Lake Thiersee." },
+    { selector: ".page-hero .eyebrow", text: "Campsite" },
+    { selector: ".page-hero h1", text: "Campsite" },
+    { selector: ".page-hero p", text: "All important information about arrival, facilities, lake access, canteen and reservations." },
+    { selector: ".section-heading .eyebrow", text: "On site" },
+    { selector: ".section-heading h2", text: "Easy to reach and located directly at Lake Thiersee" },
+    { selector: ".section-heading p", text: "You can reach the campsite easily via Kufstein or via the Bavarian border when arriving through Bayrischzell." },
+    { selector: ".immersive-copy .panel-label", text: "Right on site" },
+    { selector: ".immersive-copy h3", text: "Camping at Lake Thiersee" },
+    { selector: ".immersive-copy p", text: "Our site combines direct lake access, practical facilities and a relaxed atmosphere with short distances on site." },
+    { selector: ".utility-card:nth-of-type(1) h3", text: "Facilities" },
+    { selector: ".utility-card:nth-of-type(1) p", text: "Our campsite offers sanitary facilities, a washing machine and dryer, power connections, a waste separation station, a chemical toilet, night lighting, a telephone booth and a playground for children." },
+    { selector: ".utility-card:nth-of-type(2) h3", text: "Lake access" },
+    { selector: ".utility-card:nth-of-type(2) p", text: "There is direct access to the lake. Please note: a bathing pass is required for the lawn directly by the lake. Of course this is not required for relaxing on your reserved pitch. A seasonal pass is available from our canteen." },
+    { selector: ".utility-card:nth-of-type(3) h3", text: "Canteen" },
+    { selector: ".utility-card:nth-of-type(3) p", text: "In high season, our canteen is open daily from 10:00 and is always a great place to enjoy a refreshment, have a snack or cool down with a delicious ice cream." },
+    { selector: ".utility-card:nth-of-type(4) h3", text: "Barbecuing" },
+    { selector: ".utility-card:nth-of-type(4) p", text: "Since 15.04.22, only gas or electric barbecues are permitted on campsites in Tyrol. Gas barbecues require an inspection of valves and connections at least every two years. Charcoal and open-fire barbecuing are no longer allowed." },
+    { selector: ".info-strip > div:nth-of-type(1) strong", text: "Reservation" },
+    { selector: ".info-strip > div:nth-of-type(1) span", text: "In high season, please reserve if possible via info@hiasenhof-thiersee.at. You are welcome to mention your preferred pitch and we will do our best to reserve it for you." },
+    { selector: ".info-strip > div:nth-of-type(2) strong", text: "Payment" },
+    { selector: ".info-strip > div:nth-of-type(2) span", text: "Please always settle your bill on arrival or one day before departure by 18:00 at the latest." },
+    { selector: ".info-strip > div:nth-of-type(3) strong", text: "Arrival / Departure" },
+    { selector: ".info-strip > div:nth-of-type(3) span", text: "Arrival from 10:00, departure until 10:00 during high season, which means July and August." },
+  ],
+  erlebnisse: [
+    { selector: "title", text: "Activities | Hiasen Hof at Lake Thiersee" },
+    { selector: ".page-hero .eyebrow", text: "Activities" },
+    { selector: ".page-hero h1", text: "Summer and winter equally well considered" },
+    { selector: ".page-hero p", text: "Thiersee is the starting point for many sports and leisure activities. Everything is neatly organised by season here." },
+    { selector: ".experiences .section-heading .eyebrow", text: "Thiersee and surroundings" },
+    { selector: ".experiences .section-heading h2", text: "Experience worlds directly from the campsite" },
+    { selector: ".experiences .section-heading p", text: "Between lake, mountains and Kufstein, spontaneous and planned excursions are equally easy to arrange." },
+    { selector: '.season-panel [class="experience-card"]:nth-of-type(1) h3', text: "Beach and lake time" },
+    { selector: '.season-panel [class="experience-card"]:nth-of-type(2) h3', text: "Hiking and mountain scenery" },
+    { selector: '.season-panel [class="experience-card"]:nth-of-type(3) h3', text: "Kufstein as a day trip" },
+  ],
+  preise: [
+    { selector: "title", text: "Prices | Hiasen Hof at Lake Thiersee" },
+    { selector: '.page-hero .eyebrow', text: "Prices" },
+    { selector: '.page-hero h1', text: "All daily prices at a glance" },
+    { selector: '.page-hero p', text: "The price overview is valid from 01.05.2025." },
+  ],
+  buchen: [
+    { selector: "title", text: "Book | Hiasen Hof at Lake Thiersee" },
+    { selector: '.page-hero .eyebrow', text: "Book" },
+    { selector: '.page-hero h1', text: "Prepare your booking request directly" },
+    { selector: '.page-hero p', text: "Choose your preferred free pitch, review the notes and send your request directly to Hiasen Hof. The booking only becomes binding once you receive a reply." },
+    { selector: '#booking-plan-title', text: "Choose your free pitch directly" },
+    { selector: '.booking-plan-header .eyebrow', text: "Preferred pitch" },
+    { selector: '.status-chip.free', text: "Free" },
+    { selector: '.status-chip.reserved', text: "Reserved" },
+    { selector: '.status-chip.occupied', text: "Occupied" },
+    { selector: '.booking-notes .note-card:nth-of-type(1) h3', text: "Request notes" },
+    { selector: '.booking-notes .note-card:nth-of-type(2) h3', text: "Contact and reservation" },
+    { selector: '#pitch-selection-status', text: "No preferred pitch selected yet." },
+  ],
+  anreise: [
+    { selector: "title", text: "Directions | Hiasen Hof at Lake Thiersee" },
+    { selector: '.page-hero .eyebrow', text: "Directions" },
+    { selector: '.page-hero h1', text: "Address, map and routes to the campsite" },
+    { selector: '.page-hero p', text: "Address, map and arrival information are concentrated here on a dedicated page and prepared in a clearer way." },
+    { selector: '.contact-card .button-primary', text: "Open in Google Maps" },
+    { selector: '.contact-form-card h3', text: "Contact form" },
+    { selector: '.faq-card:nth-of-type(1) h3', text: "Do I need a reservation?" },
+    { selector: '.faq-card:nth-of-type(2) h3', text: "How does booking work?" },
+  ],
+  impressum: [
+    { selector: "title", text: "Legal notice | Hiasen Hof at Lake Thiersee" },
+    { selector: '.page-hero .eyebrow', text: "Legal notice" },
+    { selector: '.page-hero h1', text: "Legal notice" },
+    { selector: '.page-hero p', text: "Responsible for the content and legal information about the online offer." },
+  ],
+};
+
+const applyTextTranslation = (selector, value) => {
+  const elements = document.querySelectorAll(selector);
+  elements.forEach((element) => {
+    if (!element.dataset.i18nOriginalText) {
+      element.dataset.i18nOriginalText = element.textContent;
+    }
+    element.textContent = currentLanguage === "en" ? value : element.dataset.i18nOriginalText;
+  });
+};
+
+const applyAttributeTranslation = (selector, attribute, value) => {
+  const elements = document.querySelectorAll(selector);
+  elements.forEach((element) => {
+    const datasetKey = `i18nOriginalAttr${attribute}`;
+    if (!element.dataset[datasetKey]) {
+      element.dataset[datasetKey] = element.getAttribute(attribute) || "";
+    }
+    element.setAttribute(attribute, currentLanguage === "en" ? value : element.dataset[datasetKey]);
+  });
+};
+
+const applyStaticTranslations = () => {
+  const page = pageSlugFromPath();
+  [...(STATIC_TRANSLATIONS.common || []), ...(STATIC_TRANSLATIONS[page] || [])].forEach((entry) => {
+    if (entry.attr) {
+      applyAttributeTranslation(entry.selector, entry.attr, entry.text);
+    } else {
+      applyTextTranslation(entry.selector, entry.text);
+    }
+  });
+
+  document.documentElement.lang = currentLanguage;
+};
+
+const applyExactTextTranslations = () => {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.parentElement || ["SCRIPT", "STYLE"].includes(node.parentElement.tagName)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!originalTextNodeContent.has(node)) {
+      originalTextNodeContent.set(node, node.textContent);
+    }
+    const original = originalTextNodeContent.get(node);
+    const trimmed = String(original || "").trim();
+    if (!trimmed || !TEXT_TRANSLATIONS[trimmed]) {
+      node.textContent = original;
+      continue;
+    }
+    const translated = TEXT_TRANSLATIONS[trimmed];
+    node.textContent = currentLanguage === "en" ? String(original).replace(trimmed, translated) : original;
+  }
+
+  document.querySelectorAll("[placeholder], [alt], [title], meta[name='description'], iframe[title]").forEach((element) => {
+    ["placeholder", "alt", "title", "content"].forEach((attribute) => {
+      const currentValue = element.getAttribute(attribute);
+      if (!currentValue) {
+        return;
+      }
+      const datasetKey = `i18nOriginalAttr${attribute}`;
+      if (!element.dataset[datasetKey]) {
+        element.dataset[datasetKey] = currentValue;
+      }
+      const original = element.dataset[datasetKey];
+      element.setAttribute(attribute, currentLanguage === "en" ? ATTRIBUTE_TRANSLATIONS[original] || original : original);
+    });
+  });
+};
+
+const initLanguageSwitch = () => {
+  const header = document.querySelector(".site-header");
+  if (!header || header.querySelector(".language-switch")) {
+    return;
+  }
+
+  header.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div class="language-switch" aria-label="Sprache">
+        <button type="button" class="language-switch-button" data-language="de">DE</button>
+        <button type="button" class="language-switch-button" data-language="en">EN</button>
+      </div>
+    `,
+  );
+
+  document.querySelectorAll(".language-switch-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.language !== currentLanguage) {
+        setLanguage(button.dataset.language, { reload: true });
+      }
+    });
+  });
+
+  syncLanguageButtons();
+};
+
+const updateLanguageLinks = () => {
+  document.querySelectorAll('a[href$=".html"], a[href="./"], a[href="/"], .brand').forEach((link) => {
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("http") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("#")) {
+      return;
+    }
+    const url = new URL(href, window.location.href);
+    if (currentLanguage === "en") {
+      url.searchParams.set("lang", "en");
+    } else {
+      url.searchParams.delete("lang");
+    }
+    const nextHref = `${url.pathname.split("/").pop() || ""}${url.search}${url.hash}`;
+    link.setAttribute("href", nextHref || "./");
+  });
+};
+
+const applyLanguageState = () => {
+  applyExactTextTranslations();
+  applyStaticTranslations();
+  renderPricingTable();
+  renderSitePlan();
+  renderBookingPitchOptions();
+  updateBookingEstimate();
+  updateContactLinks();
+  updateLanguageLinks();
+  syncLanguageButtons();
+};
+
+const setLanguage = (language, { reload = false } = {}) => {
+  const nextLanguage = language === "en" ? "en" : "de";
+  currentLanguage = nextLanguage;
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage);
+  const url = new URL(window.location.href);
+  if (currentLanguage === "en") {
+    url.searchParams.set("lang", "en");
+  } else {
+    url.searchParams.delete("lang");
+  }
+  if (reload) {
+    window.location.href = `${url.pathname}${url.search}${url.hash}`;
+    return;
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  applyLanguageState();
+};
+
+const syncLanguageButtons = () => {
+  document.querySelectorAll(".language-switch-button, .editor-language-button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.language === currentLanguage);
+  });
 };
 
 const buildAdminInquiries = (adminData = {}) => {
@@ -1028,6 +1459,7 @@ const editableSelectors = [
   "main .overview-card",
   "main .immersive-copy",
   "main .utility-card",
+  "main .experience-card",
   "main .info-strip > div",
   "main .note-card",
   "main .booking-plan-card",
@@ -1086,6 +1518,10 @@ const editorHtml = `
       </form>
       <div class="site-editor-actions" id="site-editor-actions" hidden>
         <p id="site-editor-user"></p>
+        <div class="editor-language-switch" id="site-editor-language-switch">
+          <button type="button" class="editor-language-button" data-language="de">DE</button>
+          <button type="button" class="editor-language-button" data-language="en">EN</button>
+        </div>
         <button type="button" id="site-editor-enable">Edit-Modus</button>
         <button type="button" id="site-editor-save">Seite speichern</button>
         <button type="button" id="site-editor-prices">Preise bearbeiten</button>
@@ -1099,7 +1535,9 @@ const editorHtml = `
   <div class="site-editor-modal" id="site-editor-modal" data-editor-ui hidden>
     <div class="site-editor-modal-backdrop" data-editor-close></div>
     <div class="site-editor-modal-dialog">
-      <h3 id="site-editor-modal-title">Inhalt bearbeiten</h3>
+      <div class="site-editor-modal-header">
+        <h3 id="site-editor-modal-title">Inhalt bearbeiten</h3>
+      </div>
       <div id="site-editor-modal-input" contenteditable="true"></div>
       <div class="site-editor-modal-actions">
         <button type="button" id="site-editor-modal-cancel" data-editor-close>Abbrechen</button>
@@ -1140,6 +1578,7 @@ const editorHtml = `
         <label class="site-editor-field">
           <span>Aktuelles Passwort</span>
           <input type="password" id="site-settings-current-password" autocomplete="current-password" />
+          <small class="site-editor-field-error" id="site-settings-current-password-error" hidden></small>
         </label>
         <label class="site-editor-field">
           <span>Neues Passwort</span>
@@ -1149,7 +1588,7 @@ const editorHtml = `
           <span>Neues Passwort wiederholen</span>
           <input type="password" id="site-settings-confirm-password" autocomplete="new-password" />
         </label>
-        <button type="button" id="site-settings-change-password">Passwort ändern</button>
+        <button type="button" id="site-settings-change-password"><span data-button-label>Passwort ändern</span></button>
       </div>
       <p class="footer-note">Kontakt- und Buchungsanfragen werden intern gespeichert und sind in der Admin-Konsole sichtbar.</p>
       <div class="site-editor-modal-actions">
@@ -1258,7 +1697,7 @@ const addEditorPencils = () => {
       return;
     }
     element.classList.add("editor-target");
-    const button = createEditorButton("editor-pencil", "âœŽ", (event) => {
+    const button = createEditorButton("editor-pencil", "Edit", (event) => {
       event.preventDefault();
       event.stopPropagation();
       openContentEditor(element);
@@ -1272,7 +1711,7 @@ const addEditorPencils = () => {
     }
     element.classList.add("editor-target");
     element.appendChild(
-      createEditorButton("editor-pencil", "âœŽ", (event) => {
+      createEditorButton("editor-pencil", "Edit", (event) => {
         event.preventDefault();
         event.stopPropagation();
         openLinksEditor(element);
@@ -1567,7 +2006,7 @@ const saveCurrentPage = async () => {
   const content = serializeCurrentPage();
   await publicApi(`/api/admin/pages/${slug}`, {
     method: "PUT",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, lang: currentLanguage }),
   });
   const status = document.querySelector("#site-editor-status");
   if (status) {
@@ -1829,6 +2268,7 @@ const initPublicEditor = async () => {
   const saveButton = document.querySelector("#site-editor-save");
   const logoutButton = document.querySelector("#site-editor-logout");
   const userText = document.querySelector("#site-editor-user");
+  const editorLanguageButtons = document.querySelectorAll(".editor-language-button");
   const priceButton = document.querySelector("#site-editor-prices");
   const contactRequestsButton = document.querySelector("#site-editor-contact-requests");
   const settingsButton = document.querySelector("#site-editor-settings");
@@ -1841,6 +2281,7 @@ const initPublicEditor = async () => {
   const bookingPhoneInput = document.querySelector("#site-settings-booking-phone");
   const senderNameInput = document.querySelector("#site-settings-sender-name");
   const currentPasswordInput = document.querySelector("#site-settings-current-password");
+  const currentPasswordError = document.querySelector("#site-settings-current-password-error");
   const newPasswordInput = document.querySelector("#site-settings-new-password");
   const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
   const changePasswordButton = document.querySelector("#site-settings-change-password");
@@ -1864,6 +2305,10 @@ const initPublicEditor = async () => {
   const clearPasswordInputs = () => {
     if (currentPasswordInput) {
       currentPasswordInput.value = "";
+    }
+    if (currentPasswordError) {
+      currentPasswordError.textContent = "";
+      currentPasswordError.hidden = true;
     }
     if (newPasswordInput) {
       newPasswordInput.value = "";
@@ -1899,6 +2344,8 @@ const initPublicEditor = async () => {
     actions.hidden = !isLoggedIn;
 
     if (isLoggedIn) {
+      localStorage.setItem(AUTH_CACHE_KEY, "1");
+      localStorage.setItem(AUTH_CACHE_EMAIL_KEY, String(editorState.session?.user?.email || ""));
       editorState.panelOpen = localStorage.getItem("siteEditorPanelOpen") === "1";
       panel.hidden = !editorState.panelOpen;
       loginForm.reset();
@@ -1908,6 +2355,8 @@ const initPublicEditor = async () => {
     }
 
     editorState.panelOpen = false;
+    localStorage.removeItem(AUTH_CACHE_KEY);
+    localStorage.removeItem(AUTH_CACHE_EMAIL_KEY);
     localStorage.setItem("siteEditorPanelOpen", "0");
     panel.hidden = true;
     userText.textContent = "";
@@ -1925,6 +2374,15 @@ const initPublicEditor = async () => {
     editorState.panelOpen = !editorState.panelOpen;
     panel.hidden = !editorState.panelOpen;
     localStorage.setItem("siteEditorPanelOpen", editorState.panelOpen ? "1" : "0");
+  });
+
+  editorLanguageButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.language === currentLanguage) {
+        return;
+      }
+      setLanguage(button.dataset.language === "en" ? "en" : "de", { reload: true });
+    });
   });
 
   document.querySelectorAll("[data-editor-close]").forEach((button) => button.addEventListener("click", closeContentEditor));
@@ -2026,13 +2484,27 @@ const initPublicEditor = async () => {
     }
   });
 
+  if (localStorage.getItem(AUTH_CACHE_KEY) === "1") {
+    editorState.session = {
+      user: {
+        email: localStorage.getItem(AUTH_CACHE_EMAIL_KEY) || bootstrapData.settings.bookingRecipientEmail || "admin",
+        role: "admin",
+      },
+    };
+    updateEditorAuthUi();
+  }
+
   try {
     const session = await publicApi("/api/auth/session");
     editorState.session = session;
     if (session.user) {
-      await loadAdminBootstrap();
+      updateEditorAuthUi();
+      loadAdminBootstrap().catch((error) => {
+        setEditorStatusMessage(error.message || "Admin-Daten konnten nicht geladen werden.");
+      });
+    } else {
+      updateEditorAuthUi();
     }
-    updateEditorAuthUi();
   } catch (error) {
     editorState.session = null;
     updateEditorAuthUi();
@@ -2117,6 +2589,10 @@ const initPublicEditor = async () => {
     const status = document.querySelector("#site-editor-status");
 
     if (!currentPassword || !newPassword || !confirmPassword) {
+      if (currentPasswordError) {
+        currentPasswordError.textContent = "";
+        currentPasswordError.hidden = true;
+      }
       if (status) {
         status.textContent = "Bitte alle Passwort-Felder ausfüllen.";
       }
@@ -2124,24 +2600,52 @@ const initPublicEditor = async () => {
     }
 
     if (newPassword !== confirmPassword) {
+      if (currentPasswordError) {
+        currentPasswordError.textContent = "";
+        currentPasswordError.hidden = true;
+      }
       if (status) {
         status.textContent = "Die neuen Passwörter stimmen nicht überein.";
       }
       return;
     }
 
-    await publicApi("/api/admin/account/password", {
-      method: "PATCH",
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
+    try {
+      setButtonLoading(changePasswordButton, true);
+      if (currentPasswordError) {
+        currentPasswordError.textContent = "";
+        currentPasswordError.hidden = true;
+      }
+      if (status) {
+        status.textContent = "Admin-Passwort wird geändert.";
+      }
 
-    bootstrapData.settings = {
-      ...bootstrapData.settings,
-      adminPassword: newPassword,
-    };
-    clearPasswordInputs();
-    if (status) {
-      status.textContent = "Admin-Passwort gespeichert.";
+      await publicApi("/api/admin/account/password", {
+        method: "PATCH",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      bootstrapData.settings = {
+        ...bootstrapData.settings,
+        adminPassword: newPassword,
+      };
+      clearPasswordInputs();
+      if (status) {
+        status.textContent = "Admin-Passwort gespeichert.";
+      }
+    } catch (error) {
+      const message = error.message || "Admin-Passwort konnte nicht geändert werden.";
+      const isCurrentPasswordError =
+        /aktuelle Passwort/i.test(message) || /nicht korrekt/i.test(message) || /ungültig/i.test(message);
+      if (currentPasswordError) {
+        currentPasswordError.textContent = isCurrentPasswordError ? message : "";
+        currentPasswordError.hidden = !isCurrentPasswordError;
+      }
+      if (status) {
+        status.textContent = message;
+      }
+    } finally {
+      setButtonLoading(changePasswordButton, false);
     }
   });
 
@@ -2151,6 +2655,9 @@ const initPublicEditor = async () => {
     updateEditorAuthUi();
   });
 };
+
+initLanguageSwitch();
+applyLanguageState();
 
 if (year) {
   year.textContent = new Date().getFullYear();

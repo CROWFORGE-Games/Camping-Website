@@ -27,6 +27,7 @@ const resolveStoragePath = (value, fallbackFolder) => {
 const DATA_DIR = resolveStoragePath(process.env.DATA_DIR, "data");
 const UPLOADS_DIR = resolveStoragePath(process.env.UPLOADS_DIR, "uploads");
 const STORE_FILE = path.join(DATA_DIR, "store.json");
+const PAGE_OVERRIDES_DIR = path.join(DATA_DIR, "pages");
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
 
 const PORT = Number(process.env.PORT || 3001);
@@ -46,6 +47,7 @@ const GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_
 const GOOGLE_APPS_SCRIPT_CONTACT_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_CONTACT_SHEET || "Anfragen").trim();
 const GOOGLE_APPS_SCRIPT_SPOTS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_SPOTS_SHEET || "Spots").trim();
 const GOOGLE_APPS_SCRIPT_SETTINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_SETTINGS_SHEET || "Einstellungen").trim();
+const GOOGLE_APPS_SCRIPT_PRICES_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_PRICES_SHEET || "Preise").trim();
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
@@ -171,7 +173,7 @@ const defaultStore = () => ({
 });
 
 const ensureDirectories = () => {
-  [DATA_DIR, UPLOADS_DIR, ADMIN_DIR].forEach((dirPath) => {
+  [DATA_DIR, PAGE_OVERRIDES_DIR, UPLOADS_DIR, ADMIN_DIR].forEach((dirPath) => {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
     }
@@ -862,6 +864,71 @@ const saveSettingsToAppsScript = async (settings) => {
   });
 };
 
+const parsePricesRowsFromAppsScript = (rows) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row, index) => {
+      const key = String(row.key || "").trim() || `custom_${index}`;
+      const label = String(row.label || "").trim();
+      if (!label) {
+        return null;
+      }
+
+      return {
+        key,
+        label,
+        amount: Number(row.amount || 0),
+        category: String(row.category || "misc").trim() || "misc",
+        unit: String(row.unit || "night").trim() || "night",
+        bookingOption: parseBooleanEnv(row.bookingOption, false),
+        selectionValue: String(row.selectionValue || row.label || "").trim(),
+      };
+    })
+    .filter(Boolean);
+
+const savePricesToAppsScript = async (prices) => {
+  await postToAppsScript("savePrices", {
+    sheetName: GOOGLE_APPS_SCRIPT_PRICES_SHEET,
+    prices: (Array.isArray(prices) ? prices : []).map((price) => ({
+      key: String(price.key || "").trim(),
+      label: String(price.label || "").trim(),
+      amount: Number(price.amount || 0),
+      category: String(price.category || "misc").trim(),
+      unit: String(price.unit || "night").trim(),
+      bookingOption: Boolean(price.bookingOption),
+      selectionValue: String(price.selectionValue || price.label || "").trim(),
+    })),
+  });
+};
+
+const syncStorePricesFromAppsScript = async (store) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return store;
+  }
+
+  try {
+    const data = await getFromAppsScript("prices", {
+      sheetName: GOOGLE_APPS_SCRIPT_PRICES_SHEET,
+    });
+    const remotePrices = parsePricesRowsFromAppsScript(data?.rows);
+
+    if (remotePrices.length > 0) {
+      const nextSerialized = JSON.stringify(remotePrices);
+      const currentSerialized = JSON.stringify(store.prices || []);
+      if (nextSerialized !== currentSerialized) {
+        store.prices = remotePrices;
+        writeStore(store);
+      }
+    }
+
+    return store;
+  } catch (error) {
+    console.error("Preise konnten nicht aus Google Sheets gelesen werden.", error);
+    return store;
+  }
+};
+
 const syncStoreSettingsFromAppsScript = async (store) => {
   const config = appsScriptConfig();
 
@@ -926,7 +993,8 @@ const syncPitchesToAppsScript = async (pitches) => {
 };
 
 const ensureAdminUser = async () => {
-  const store = await syncStoreSettingsFromAppsScript(loadStore());
+  let store = await syncStoreSettingsFromAppsScript(loadStore());
+  store = await syncStorePricesFromAppsScript(store);
 
   if (store.users.length > 0) {
     return;
@@ -956,29 +1024,48 @@ const ensureVapidKeys = () => {
 };
 
 const editableFileBySlug = (slug) => EDITABLE_FILES.find((entry) => entry.slug === slug);
+const normalizeLanguage = (value) => (String(value || "").trim().toLowerCase() === "en" ? "en" : "de");
+const pageOverrideCandidates = (file, language = "de") => {
+  const normalizedLanguage = normalizeLanguage(language);
+  return normalizedLanguage === "en"
+    ? [path.join(PAGE_OVERRIDES_DIR, "en", file)]
+    : [path.join(PAGE_OVERRIDES_DIR, "de", file), path.join(PAGE_OVERRIDES_DIR, file)];
+};
 
-const readEditablePage = (slug) => {
+const readEditablePage = (slug, language = "de") => {
   const entry = editableFileBySlug(slug);
 
   if (!entry) {
     return null;
   }
 
+  const sourcePath =
+    pageOverrideCandidates(entry.file, language).find((candidate) => fs.existsSync(candidate)) ||
+    path.join(ROOT_DIR, entry.file);
+
   return {
     ...entry,
-    content: fs.readFileSync(path.join(ROOT_DIR, entry.file), "utf8"),
+    content: fs.readFileSync(sourcePath, "utf8"),
   };
 };
 
-const writeEditablePage = (slug, content) => {
+const writeEditablePage = (slug, content, language = "de") => {
   const entry = editableFileBySlug(slug);
 
   if (!entry) {
     return false;
   }
 
-  fs.writeFileSync(path.join(ROOT_DIR, entry.file), content, "utf8");
+  const normalizedLanguage = normalizeLanguage(language);
+  const targetDir =
+    normalizedLanguage === "en" ? path.join(PAGE_OVERRIDES_DIR, "en") : path.join(PAGE_OVERRIDES_DIR, "de");
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, entry.file), content, "utf8");
   return true;
+};
+
+const publicPagePath = (file, language = "de") => {
+  return pageOverrideCandidates(file, language).find((candidate) => fs.existsSync(candidate)) || path.join(ROOT_DIR, file);
 };
 
 const publicBootstrap = (store, pitches = store.pitches.filter((pitch) => pitch.active)) => ({
@@ -1282,7 +1369,8 @@ app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/admin", express.static(ADMIN_DIR));
 
 app.get("/api/public/bootstrap", async (_req, res) => {
-  const store = await syncStoreSettingsFromAppsScript(loadStore());
+  let store = await syncStoreSettingsFromAppsScript(loadStore());
+  store = await syncStorePricesFromAppsScript(store);
   const pitches = await resolvePitchesWithRemoteStatus(store.pitches.filter((pitch) => pitch.active));
   res.json(publicBootstrap(store, pitches));
 });
@@ -1474,7 +1562,8 @@ app.get("/api/auth/session", (req, res) => {
 });
 
 app.get("/api/admin/bootstrap", requireAuth, async (_req, res) => {
-  const store = await syncStoreSettingsFromAppsScript(loadStore());
+  let store = await syncStoreSettingsFromAppsScript(loadStore());
+  store = await syncStorePricesFromAppsScript(store);
   const pitches = await resolvePitchesWithRemoteStatus(store.pitches);
   const remoteInquiries = await getInquiriesFromAppsScript();
   const bookings =
@@ -1592,7 +1681,13 @@ app.put("/api/admin/prices", requireAuth, (req, res) => {
   }));
 
   writeStore(store);
-  res.json({ ok: true, prices: store.prices });
+  savePricesToAppsScript(store.prices)
+    .then(() => {
+      res.json({ ok: true, prices: store.prices });
+    })
+    .catch((error) => {
+      res.status(500).json({ error: error.message || "Preise konnten nicht in Google Sheets gespeichert werden." });
+    });
 });
 
 app.put("/api/admin/pitches", requireAuth, async (req, res) => {
@@ -1624,7 +1719,7 @@ app.put("/api/admin/pitches", requireAuth, async (req, res) => {
 });
 
 app.get("/api/admin/pages/:slug", requireAuth, (req, res) => {
-  const page = readEditablePage(req.params.slug);
+  const page = readEditablePage(req.params.slug, req.query.lang);
 
   if (!page) {
     res.status(404).json({ error: "Seite nicht gefunden." });
@@ -1636,7 +1731,7 @@ app.get("/api/admin/pages/:slug", requireAuth, (req, res) => {
 
 app.put("/api/admin/pages/:slug", requireAuth, (req, res) => {
   const content = String(req.body.content || "");
-  const success = writeEditablePage(req.params.slug, content);
+  const success = writeEditablePage(req.params.slug, content, req.body.lang || req.query.lang);
 
   if (!success) {
     res.status(404).json({ error: "Seite nicht gefunden." });
@@ -1842,8 +1937,8 @@ app.post("/api/admin/push/subscribe", requireAuth, (req, res) => {
 PUBLIC_HTML_FILES.forEach((file) => {
   const routes = file === "index.html" ? ["/", "/index.html"] : [`/${file}`];
   routes.forEach((route) => {
-    app.get(route, (_req, res) => {
-      res.sendFile(path.join(ROOT_DIR, file));
+    app.get(route, (req, res) => {
+      res.sendFile(publicPagePath(file, req.query.lang));
     });
   });
 });
@@ -1869,6 +1964,13 @@ Promise.resolve()
       await saveSettingsToAppsScript(loadStore().settings);
     } catch (error) {
       console.error("Initialer Google Sheets Sync für Einstellungen fehlgeschlagen.", error);
+    }
+  })
+  .then(async () => {
+    try {
+      await savePricesToAppsScript(loadStore().prices);
+    } catch (error) {
+      console.error("Initialer Google Sheets Sync fÃ¼r Preise fehlgeschlagen.", error);
     }
   })
   .then(ensureVapidKeys)
