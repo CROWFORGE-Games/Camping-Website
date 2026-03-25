@@ -63,6 +63,19 @@ const displayDateTimeFormatter = new Intl.DateTimeFormat("de-AT", {
   hourCycle: "h23",
 });
 
+const formatDateOnlyForDisplay = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}.${m}.${y}`;
+};
+
 const formatDateTimeForDisplay = (value) => {
   if (!value) {
     return "";
@@ -1162,7 +1175,7 @@ const sendBookingEmailViaResend = async (booking) => {
   const pitchList = Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "-";
 
   return sendResendEmail({
-    subject: `Neue Buchungsanfrage ${booking.arrival} bis ${booking.departure}`,
+    subject: `Neue Buchungsanfrage ${formatDateOnlyForDisplay(booking.arrival)} bis ${formatDateOnlyForDisplay(booking.departure)}`,
     text: [
       "Neue Buchungsanfrage über die Website",
       "",
@@ -1175,8 +1188,8 @@ const sendBookingEmailViaResend = async (booking) => {
       `E-Mail: ${booking.email}`,
       `Telefon: ${booking.phone}`,
       "",
-      `Anreise: ${booking.arrival}`,
-      `Abreise: ${booking.departure}`,
+      `Anreise: ${formatDateOnlyForDisplay(booking.arrival)}`,
+      `Abreise: ${formatDateOnlyForDisplay(booking.departure)}`,
       `Wunschstellplatz: ${booking.preferredPitch || "-"}`,
       `Platzwahl: ${pitchList}`,
       `Erwachsene: ${booking.adults}`,
@@ -1218,8 +1231,8 @@ const sendInquiryReplyViaResend = async (entry, replyMessage) => {
   const summaryLines =
     entry.type === "booking"
       ? [
-          `Anreise: ${entry.arrival || "-"}`,
-          `Abreise: ${entry.departure || "-"}`,
+          `Anreise: ${formatDateOnlyForDisplay(entry.arrival)}`,
+          `Abreise: ${formatDateOnlyForDisplay(entry.departure)}`,
           `Wunschstellplatz: ${entry.preferredPitch || "-"}`,
         ]
       : [`Betreff: ${entry.subject || "-"}`];
@@ -1358,20 +1371,15 @@ app.post("/api/public/bookings", rateLimit(10), async (req, res) => {
   store.bookings.unshift(booking);
   writeStore(store);
 
-  try {
-    await syncBookingToAppsScript(booking);
-  } catch (error) {
+  // Fire-and-forget: Sheets-Sync ist nicht-kritisch, Buchung lokal bereits gespeichert
+  syncBookingToAppsScript(booking).catch((error) => {
     console.error("Google Sheets Sync für Buchung fehlgeschlagen.", error);
-    res.status(500).json({
-      error: "Die Anfrage wurde lokal gespeichert, aber nicht in Google Sheets geschrieben.",
-    });
-    return;
-  }
+  });
 
   try {
     await sendPushNotification(
       "Neue Buchungsanfrage",
-      `${booking.name} · ${booking.arrival} bis ${booking.departure}`,
+      `${booking.name} · ${formatDateOnlyForDisplay(booking.arrival)} bis ${formatDateOnlyForDisplay(booking.departure)}`,
     );
   } catch (error) {
     console.error("Push-Benachrichtigung konnte nicht gesendet werden.", error);
@@ -1410,15 +1418,10 @@ app.post("/api/public/contact", rateLimit(10), async (req, res) => {
   store.contactRequests.unshift(contactRequest);
   writeStore(store);
 
-  try {
-    await syncContactRequestToAppsScript(contactRequest);
-  } catch (error) {
+  // Fire-and-forget: Sheets-Sync ist nicht-kritisch, Anfrage lokal bereits gespeichert
+  syncContactRequestToAppsScript(contactRequest).catch((error) => {
     console.error("Google Sheets Sync für Kontaktanfrage fehlgeschlagen.", error);
-    res.status(500).json({
-      error: "Die Nachricht wurde lokal gespeichert, aber nicht in Google Sheets geschrieben.",
-    });
-    return;
-  }
+  });
 
   try {
     await sendPushNotification(
@@ -1776,12 +1779,12 @@ app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) =
   source.repliedBy = req.user.email;
   source.status = "done";
   writeStore(store);
-  try {
-    await updateInquiryStatusInAppsScript(req.params.id, "done");
-  } catch (error) {
-    res.status(500).json({ error: error.message || "Antwort wurde gesendet, aber der Status konnte nicht gespeichert werden." });
-    return;
-  }
+
+  // Fire-and-forget: Sheets status update is non-critical
+  updateInquiryStatusInAppsScript(req.params.id, "done").catch((error) => {
+    console.error("Status konnte nicht in Sheets aktualisiert werden:", error.message);
+  });
+
   res.json({ ok: true });
 });
 
@@ -1823,17 +1826,11 @@ app.post("/api/admin/inquiries/booking/:id/confirm", requireAuth, async (req, re
     return;
   }
 
+  // Kritisch: E-Mail muss erfolgreich versendet werden
   try {
     await sendInquiryReplyViaResend({ ...source, type: "booking" }, message);
-    await appendSpotReservationToAppsScript({
-      zoneLabel,
-      number: pitchNumber,
-      status: "reserved",
-      from: source.arrival,
-      to: source.departure,
-    });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Buchung konnte nicht bestätigt werden." });
+    res.status(500).json({ error: error.message || "Buchungsbestätigung konnte nicht versendet werden." });
     return;
   }
 
@@ -1843,12 +1840,20 @@ app.post("/api/admin/inquiries/booking/:id/confirm", requireAuth, async (req, re
   source.confirmedAt = new Date().toISOString();
   writeStore(store);
 
-  try {
-    await updateInquiryStatusInAppsScript(req.params.id, "done");
-  } catch (error) {
-    res.status(500).json({ error: error.message || "Buchung wurde bestätigt, aber der Status konnte nicht gespeichert werden." });
-    return;
-  }
+  // Fire-and-forget: Sheets-Einträge sind nicht-kritisch
+  appendSpotReservationToAppsScript({
+    zoneLabel,
+    number: pitchNumber,
+    status: "reserved",
+    from: source.arrival,
+    to: source.departure,
+  }).catch((error) => {
+    console.error("Reservierung konnte nicht in Sheets eingetragen werden:", error.message);
+  });
+
+  updateInquiryStatusInAppsScript(req.params.id, "done").catch((error) => {
+    console.error("Status konnte nicht in Sheets aktualisiert werden:", error.message);
+  });
 
   res.json({ ok: true });
 });

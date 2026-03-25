@@ -154,6 +154,13 @@ const normalizeDateOnly = (value) => {
   return match ? match[1] : "";
 };
 
+const formatDateOnlyDisplay = (value) => {
+  const dateStr = normalizeDateOnly(value);
+  if (!dateStr) return String(value || "-");
+  const [year, month, day] = dateStr.split("-");
+  return `${day}.${month}.${year}`;
+};
+
 const getSelectedAvailabilityRange = () => {
   const arrival =
     normalizeDateOnly(availabilityArrivalInput?.value) ||
@@ -2214,7 +2221,7 @@ const saveCurrentPage = async () => {
 };
 
 const buildBookingConfirmationMessage = (entry) =>
-  `Vielen Dank für Ihre Buchung, hiermit bestätige ich Ihre Buchung vom Zeitraum "${entry.arrival || "-"}" bis "${entry.departure || "-"}"${entry.preferredPitch ? `, der Platz "${entry.preferredPitch}" wurde bereits für Sie reserviert.` : "."}`;
+  `Vielen Dank für Ihre Buchung, hiermit bestätige ich Ihre Buchung vom Zeitraum "${formatDateOnlyDisplay(entry.arrival || "")}" bis "${formatDateOnlyDisplay(entry.departure || "")}"${entry.preferredPitch ? `, der Platz "${entry.preferredPitch}" wurde bereits für Sie reserviert.` : "."}`;
 
 const renderContactRequests = () => {
   const list = document.querySelector("#site-contact-requests-list");
@@ -2223,6 +2230,14 @@ const renderContactRequests = () => {
   }
 
   updateInquiryBadge();
+
+  // Preserve open reply box state before re-render
+  const openReplies = new Map();
+  list.querySelectorAll(".site-contact-request-reply:not([hidden])").forEach((replyBox) => {
+    const id = replyBox.id.replace("reply-", "");
+    const textarea = list.querySelector(`[data-contact-request-reply-message="${id}"]`);
+    openReplies.set(id, textarea ? textarea.value : "");
+  });
 
   if (!editorState.inquiries || editorState.inquiries.length === 0) {
     list.innerHTML = '<p class="footer-note">Noch keine Anfragen vorhanden.</p>';
@@ -2236,7 +2251,7 @@ const renderContactRequests = () => {
           <div class="site-contact-request-header">
             <div>
               <strong>${escapeHtml(entry.title || entry.name || "Unbekannt")}</strong>
-              <p>${escapeHtml(entry.inquiryType || "Anfrage")} Â· ${escapeHtml(entry.subtitle || "-")}</p>
+              <p>${escapeHtml(entry.inquiryType || "Anfrage")} &middot; ${escapeHtml(entry.subtitle || "-")}</p>
             </div>
             <span class="status-chip ${entry.status === "done" ? "reserved" : "free"}">${entry.status === "done" ? "Erledigt" : "Neu"}</span>
           </div>
@@ -2279,6 +2294,18 @@ const renderContactRequests = () => {
       `,
     )
     .join("");
+
+  // Restore open reply box state after re-render
+  openReplies.forEach((textValue, id) => {
+    const replyBox = list.querySelector(`#reply-${id}`);
+    const textarea = list.querySelector(`[data-contact-request-reply-message="${id}"]`);
+    if (replyBox) {
+      replyBox.hidden = false;
+    }
+    if (textarea && textValue !== undefined) {
+      textarea.value = textValue;
+    }
+  });
 
   list.querySelectorAll("[data-contact-request-status]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2987,6 +3014,10 @@ const init = async () => {
   [availabilityArrivalInput, availabilityDepartureInput].forEach((input) => {
     input?.addEventListener("change", () => {
       triggerAvailabilityRefresh().catch(() => {});
+    });
+    input?.addEventListener("input", () => {
+      syncAvailabilityDatesToForm();
+      updateBookingEstimate();
     });
   });
 
