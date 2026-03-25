@@ -42,6 +42,7 @@ const defaultBootstrap = {
     bookingPhone: "+43 664 885 305 24",
     bookingRecipientEmail: "info@hiasenhof-thiersee.at",
     senderName: "Camping",
+    adminPassword: "admin",
   },
   prices: [
     { key: "adult", label: "Erwachsener ab 15 Jahre", amount: 7.5, category: "person", unit: "night" },
@@ -1130,6 +1131,10 @@ const editorHtml = `
         <span>Absendername f&uuml;r E-Mails</span>
         <input type="text" id="site-settings-sender-name" placeholder="Camping" required />
       </label>
+      <label class="site-editor-field">
+        <span>Aktuelles Admin-Passwort</span>
+        <input type="password" id="site-settings-admin-password" placeholder="admin" required />
+      </label>
       <div class="site-editor-settings-section">
         <h4>Admin-Passwort ändern</h4>
         <label class="site-editor-field">
@@ -1790,6 +1795,7 @@ const initPublicEditor = async () => {
   const bookingEmailInput = document.querySelector("#site-settings-booking-email");
   const bookingPhoneInput = document.querySelector("#site-settings-booking-phone");
   const senderNameInput = document.querySelector("#site-settings-sender-name");
+  const adminPasswordInput = document.querySelector("#site-settings-admin-password");
   const currentPasswordInput = document.querySelector("#site-settings-current-password");
   const newPasswordInput = document.querySelector("#site-settings-new-password");
   const confirmPasswordInput = document.querySelector("#site-settings-confirm-password");
@@ -2022,6 +2028,7 @@ const initPublicEditor = async () => {
       bootstrapData.settings.bookingRecipientEmail || defaultBootstrap.settings.bookingRecipientEmail;
     bookingPhoneInput.value = bootstrapData.settings.bookingPhone || defaultBootstrap.settings.bookingPhone;
     senderNameInput.value = bootstrapData.settings.senderName || defaultBootstrap.settings.senderName;
+    adminPasswordInput.value = bootstrapData.settings.adminPassword || defaultBootstrap.settings.adminPassword;
     clearPasswordInputs();
     settingsModal.hidden = false;
   });
@@ -2030,7 +2037,8 @@ const initPublicEditor = async () => {
     const bookingRecipientEmail = String(bookingEmailInput.value || "").trim();
     const bookingPhone = String(bookingPhoneInput.value || "").trim();
     const senderName = String(senderNameInput.value || "").trim();
-    const requiredSettings = [bookingRecipientEmail, bookingPhone, senderName];
+    const adminPassword = String(adminPasswordInput.value || "").trim();
+    const requiredSettings = [bookingRecipientEmail, bookingPhone, senderName, adminPassword];
     if (requiredSettings.some((value) => !String(value || "").trim())) {
       const status = document.querySelector("#site-editor-status");
       if (status) {
@@ -2040,7 +2048,7 @@ const initPublicEditor = async () => {
     }
     const result = await publicApi("/api/admin/settings", {
       method: "PUT",
-      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, senderName }),
+      body: JSON.stringify({ bookingRecipientEmail, bookingPhone, senderName, adminPassword }),
     });
     bootstrapData.settings = {
       ...bootstrapData.settings,
@@ -2079,6 +2087,13 @@ const initPublicEditor = async () => {
       body: JSON.stringify({ currentPassword, newPassword }),
     });
 
+    bootstrapData.settings = {
+      ...bootstrapData.settings,
+      adminPassword: newPassword,
+    };
+    if (adminPasswordInput) {
+      adminPasswordInput.value = newPassword;
+    }
     clearPasswordInputs();
     if (status) {
       status.textContent = "Admin-Passwort gespeichert.";

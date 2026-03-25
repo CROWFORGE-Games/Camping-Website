@@ -19,6 +19,20 @@ function doGet(e) {
       });
     }
 
+    if (eventType === 'inquiries') {
+      return jsonResponse({
+        ok: true,
+        rows: readInquiries(spreadsheet, String(params.sheetName || 'Anfragen')),
+      });
+    }
+
+    if (eventType === 'settings') {
+      return jsonResponse({
+        ok: true,
+        rows: readSettings(spreadsheet, String(params.sheetName || 'Einstellungen')),
+      });
+    }
+
     return jsonResponse({ ok: false, error: 'Unbekannter eventType.' });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error && error.message ? error.message : error) });
@@ -49,6 +63,16 @@ function doPost(e) {
 
     if (eventType === 'deleteInquiry') {
       deleteInquiry(spreadsheet, payload);
+      return jsonResponse({ ok: true });
+    }
+
+    if (eventType === 'updateInquiryStatus') {
+      updateInquiryStatus(spreadsheet, payload);
+      return jsonResponse({ ok: true });
+    }
+
+    if (eventType === 'saveSettings') {
+      saveSettings(spreadsheet, payload);
       return jsonResponse({ ok: true });
     }
 
@@ -140,6 +164,23 @@ function appendInquiry(spreadsheet, payload) {
   sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
 }
 
+function saveSettings(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Einstellungen');
+  const settings = payload.settings || {};
+  const headers = ['Schlüssel', 'Wert'];
+  const rows = [
+    ['bookingRecipientEmail', settings.bookingRecipientEmail || ''],
+    ['bookingPhone', settings.bookingPhone || ''],
+    ['senderName', settings.senderName || ''],
+    ['adminPassword', settings.adminPassword || ''],
+  ];
+
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  sheet.clearContents();
+  writeHeaders(sheet, headers);
+  sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+}
+
 function replaceSpots(spreadsheet, payload) {
   const sheetName = String(payload.sheetName || 'Spots');
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
@@ -190,6 +231,108 @@ function deleteInquiry(spreadsheet, payload) {
       return;
     }
   }
+}
+
+function updateInquiryStatus(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Anfragen');
+  const id = String(payload.id || '').trim();
+  const status = String(payload.status || '').trim();
+
+  if (!id) {
+    throw new Error('Keine Anfrage-ID übergeben.');
+  }
+
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) {
+    throw new Error('Keine Anfrage gefunden.');
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const idIndex = headers.findIndex(function (header) {
+    return String(header || '').trim() === 'ID';
+  });
+  const statusIndex = headers.findIndex(function (header) {
+    return String(header || '').trim() === 'Status';
+  });
+
+  if (idIndex === -1 || statusIndex === -1) {
+    throw new Error('Spalte ID oder Status wurde im Blatt nicht gefunden.');
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+
+  for (var index = 0; index < values.length; index += 1) {
+    if (String(values[index][idIndex] || '').trim() === id) {
+      sheet.getRange(index + 2, statusIndex + 1).setValue(status);
+      return;
+    }
+  }
+
+  throw new Error('Anfrage im Blatt nicht gefunden.');
+}
+
+function readInquiries(spreadsheet, sheetName) {
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+
+  if (lastRow < 2 || lastColumn < 1) {
+    return [];
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const values = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+  const indexByHeader = {};
+
+  headers.forEach(function (header, index) {
+    indexByHeader[String(header || '').trim()] = index;
+  });
+
+  return values.map(function (row) {
+    return {
+      createdAt: row[indexByHeader['Erstellt am']] || '',
+      inquiryType: row[indexByHeader['Anfrageart']] || '',
+      status: row[indexByHeader['Status']] || '',
+      name: row[indexByHeader['Name']] || '',
+      email: row[indexByHeader['E-Mail']] || '',
+      phone: row[indexByHeader['Telefon']] || '',
+      street: row[indexByHeader['Straße']] || '',
+      city: row[indexByHeader['PLZ / Ort']] || '',
+      country: row[indexByHeader['Land']] || '',
+      subject: row[indexByHeader['Betreff']] || '',
+      arrival: row[indexByHeader['Anreise']] || '',
+      departure: row[indexByHeader['Abreise']] || '',
+      preferredPitch: row[indexByHeader['Wunschstellplatz']] || '',
+      preferredPitchZone: row[indexByHeader['Wunschstellplatzbereich']] || '',
+      preferredPitchNumber: row[indexByHeader['Wunschstellplatznummer']] || '',
+      pitchTypes: row[indexByHeader['Platzwahl']] || '',
+      adults: row[indexByHeader['Erwachsene']] || '',
+      children: row[indexByHeader['Kinder']] || '',
+      childrenAge: row[indexByHeader['Alter der Kinder']] || '',
+      estimatedTotal: row[indexByHeader['Geschätzter Gesamtpreis']] || '',
+      message: row[indexByHeader['Nachricht']] || '',
+      id: row[indexByHeader['ID']] || '',
+    };
+  });
+}
+
+function readSettings(spreadsheet, sheetName) {
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return [];
+  }
+
+  return sheet.getRange(2, 1, lastRow - 1, 2).getValues().map(function (row) {
+    return {
+      key: row[0] || '',
+      value: row[1] || '',
+    };
+  });
 }
 
 function readSpots(spreadsheet, sheetName) {

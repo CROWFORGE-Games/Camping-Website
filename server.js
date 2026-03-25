@@ -42,9 +42,10 @@ const RESEND_FROM_NAME = String(process.env.RESEND_FROM_NAME || "Camping").trim(
 const GOOGLE_APPS_SCRIPT_ENABLED = parseBooleanEnv(process.env.GOOGLE_APPS_SCRIPT_ENABLED, false);
 const GOOGLE_APPS_SCRIPT_WEBHOOK_URL = String(process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || "").trim();
 const GOOGLE_APPS_SCRIPT_TOKEN = String(process.env.GOOGLE_APPS_SCRIPT_TOKEN || "").trim();
-const GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET || "Buchungen").trim();
+const GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_BOOKINGS_SHEET || "Camping").trim();
 const GOOGLE_APPS_SCRIPT_CONTACT_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_CONTACT_SHEET || "Anfragen").trim();
 const GOOGLE_APPS_SCRIPT_SPOTS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_SPOTS_SHEET || "Spots").trim();
+const GOOGLE_APPS_SCRIPT_SETTINGS_SHEET = String(process.env.GOOGLE_APPS_SCRIPT_SETTINGS_SHEET || "Einstellungen").trim();
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
 const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
@@ -156,6 +157,7 @@ const defaultStore = () => ({
     bookingRecipientEmail: BOOKING_RECIPIENT_EMAIL,
     bookingPhone: BOOKING_PHONE,
     senderName: RESEND_FROM_NAME || "Camping",
+    adminPassword: ADMIN_PASSWORD,
     vapid: {
       publicKey: VAPID_PUBLIC_KEY,
       privateKey: VAPID_PRIVATE_KEY,
@@ -757,6 +759,152 @@ const deleteInquiryFromAppsScript = async (id) => {
   });
 };
 
+const updateInquiryStatusInAppsScript = async (id, status) => {
+  await postToAppsScript("updateInquiryStatus", {
+    sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
+    id,
+    status,
+  });
+};
+
+const normalizeInquiryStatus = (status) => {
+  const normalized = String(status || "").trim().toLowerCase();
+  return normalized === "done" ? "done" : "new";
+};
+
+const normalizeInquiryType = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized.includes("camp") || normalized.includes("buch") ? "booking" : "contact";
+};
+
+const parseInquiryRowFromAppsScript = (row) => {
+  const type = normalizeInquiryType(row.inquiryType);
+  return {
+    id: String(row.id || "").trim(),
+    type,
+    status: normalizeInquiryStatus(row.status),
+    createdAt: String(row.createdAt || "").trim(),
+    name: String(row.name || "").trim(),
+    email: String(row.email || "").trim(),
+    phone: String(row.phone || "").trim(),
+    street: String(row.street || "").trim(),
+    city: String(row.city || "").trim(),
+    country: String(row.country || "").trim(),
+    subject: String(row.subject || "").trim(),
+    arrival: String(row.arrival || "").trim(),
+    departure: String(row.departure || "").trim(),
+    preferredPitch: String(row.preferredPitch || "").trim(),
+    preferredPitchZone: String(row.preferredPitchZone || "").trim(),
+    preferredPitchNumber: String(row.preferredPitchNumber || "").trim(),
+    pitchTypes:
+      Array.isArray(row.pitchTypes)
+        ? row.pitchTypes
+        : String(row.pitchTypes || "")
+            .split(",")
+            .map((entry) => entry.trim())
+            .filter(Boolean),
+    adults: Number(row.adults || 0),
+    children: Number(row.children || 0),
+    childrenAge: String(row.childrenAge || "").trim(),
+    estimatedTotal: String(row.estimatedTotal || "").trim(),
+    message: String(row.message || "").trim(),
+  };
+};
+
+const getInquiriesFromAppsScript = async () => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return [];
+  }
+
+  try {
+    const data = await getFromAppsScript("inquiries", {
+      sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
+    });
+
+    if (!Array.isArray(data?.rows)) {
+      return [];
+    }
+
+    return data.rows
+      .map(parseInquiryRowFromAppsScript)
+      .filter((entry) => entry.id);
+  } catch (error) {
+    console.error("Anfragen konnten nicht aus Google Sheets gelesen werden.", error);
+    return [];
+  }
+};
+
+const parseSettingsRowsFromAppsScript = (rows) => {
+  const settings = {};
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = String(row.key || "").trim();
+    if (!key) {
+      return;
+    }
+    settings[key] = String(row.value || "").trim();
+  });
+
+  return settings;
+};
+
+const saveSettingsToAppsScript = async (settings) => {
+  await postToAppsScript("saveSettings", {
+    sheetName: GOOGLE_APPS_SCRIPT_SETTINGS_SHEET,
+    settings: {
+      bookingRecipientEmail: settings.bookingRecipientEmail || "",
+      bookingPhone: settings.bookingPhone || "",
+      senderName: settings.senderName || "",
+      adminPassword: settings.adminPassword || "",
+    },
+  });
+};
+
+const syncStoreSettingsFromAppsScript = async (store) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return store;
+  }
+
+  try {
+    const data = await getFromAppsScript("settings", {
+      sheetName: GOOGLE_APPS_SCRIPT_SETTINGS_SHEET,
+    });
+    const remoteSettings = parseSettingsRowsFromAppsScript(data?.rows);
+    let hasChanges = false;
+
+    ["bookingRecipientEmail", "bookingPhone", "senderName"].forEach((key) => {
+      if (remoteSettings[key] && remoteSettings[key] !== store.settings[key]) {
+        store.settings[key] = remoteSettings[key];
+        hasChanges = true;
+      }
+    });
+
+    if (remoteSettings.adminPassword && remoteSettings.adminPassword !== store.settings.adminPassword) {
+      store.settings.adminPassword = remoteSettings.adminPassword;
+      const adminUser = store.users.find((entry) => entry.role === "admin");
+
+      if (adminUser) {
+        adminUser.passwordHash = await bcrypt.hash(remoteSettings.adminPassword, 12);
+      }
+
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      writeStore(store);
+    }
+
+    return store;
+  } catch (error) {
+    console.error("Einstellungen konnten nicht aus Google Sheets gelesen werden.", error);
+    return store;
+  }
+};
+
 const syncPitchesToAppsScript = async (pitches) => {
   const rows = [...pitches]
     .sort((a, b) => {
@@ -778,13 +926,13 @@ const syncPitchesToAppsScript = async (pitches) => {
 };
 
 const ensureAdminUser = async () => {
-  const store = loadStore();
+  const store = await syncStoreSettingsFromAppsScript(loadStore());
 
   if (store.users.length > 0) {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+  const passwordHash = await bcrypt.hash(store.settings.adminPassword || ADMIN_PASSWORD, 12);
   store.users.push({
     id: crypto.randomUUID(),
     email: ADMIN_EMAIL,
@@ -910,7 +1058,7 @@ const sendBookingNotification = async (booking) => {
 const isResendConfigured = () => Boolean(RESEND_API_KEY && RESEND_FROM_EMAIL);
 
 const sendResendEmail = async ({ subject, text, replyTo, to }) => {
-  const store = loadStore();
+  const store = await syncStoreSettingsFromAppsScript(loadStore());
   const senderName = String(store.settings.senderName || RESEND_FROM_NAME || "Camping").trim();
   const recipients = Array.isArray(to)
     ? to.map((entry) => String(entry || "").trim()).filter(Boolean)
@@ -1134,7 +1282,7 @@ app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/admin", express.static(ADMIN_DIR));
 
 app.get("/api/public/bootstrap", async (_req, res) => {
-  const store = loadStore();
+  const store = await syncStoreSettingsFromAppsScript(loadStore());
   const pitches = await resolvePitchesWithRemoteStatus(store.pitches.filter((pitch) => pitch.active));
   res.json(publicBootstrap(store, pitches));
 });
@@ -1283,7 +1431,7 @@ app.post("/api/public/contact", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   const normalizedLogin = String(email || "").trim().toLowerCase();
-  const store = loadStore();
+  const store = await syncStoreSettingsFromAppsScript(loadStore());
   const user =
     store.users.find((entry) => entry.email.toLowerCase() === normalizedLogin) ||
     (normalizedLogin === "admin" ? store.users.find((entry) => entry.role === "admin") || null : null);
@@ -1326,35 +1474,59 @@ app.get("/api/auth/session", (req, res) => {
 });
 
 app.get("/api/admin/bootstrap", requireAuth, async (_req, res) => {
-  const store = loadStore();
+  const store = await syncStoreSettingsFromAppsScript(loadStore());
   const pitches = await resolvePitchesWithRemoteStatus(store.pitches);
+  const remoteInquiries = await getInquiriesFromAppsScript();
+  const bookings =
+    remoteInquiries.length > 0
+      ? remoteInquiries.filter((entry) => entry.type === "booking").map(({ type, ...entry }) => entry)
+      : store.bookings;
+  const contactRequests =
+    remoteInquiries.length > 0
+      ? remoteInquiries.filter((entry) => entry.type === "contact").map(({ type, ...entry }) => entry)
+      : store.contactRequests;
   res.json({
     user: { id: _req.user.id, email: _req.user.email, role: _req.user.role },
     settings: store.settings,
     prices: store.prices,
     pitches,
-    bookings: store.bookings,
-    contactRequests: store.contactRequests,
+    bookings,
+    contactRequests,
     users: store.users.map(({ passwordHash, ...user }) => user),
     editablePages: EDITABLE_FILES.map(({ slug, label, file }) => ({ slug, label, file })),
     vapidPublicKey: store.settings.vapid.publicKey,
   });
 });
 
-app.put("/api/admin/settings", requireAuth, (req, res) => {
+app.put("/api/admin/settings", requireAuth, async (req, res) => {
   const store = loadStore();
   const incoming = req.body || {};
+  const nextAdminPassword = String(incoming.adminPassword || store.settings.adminPassword || "").trim();
 
   store.settings = {
     ...store.settings,
     ...incoming,
+    adminPassword: nextAdminPassword || store.settings.adminPassword,
     vapid: {
       ...store.settings.vapid,
       ...(incoming.vapid || {}),
     },
   };
 
+  if (nextAdminPassword) {
+    const adminUser = store.users.find((entry) => entry.role === "admin");
+    if (adminUser) {
+      adminUser.passwordHash = await bcrypt.hash(nextAdminPassword, 12);
+    }
+  }
+
   writeStore(store);
+  try {
+    await saveSettingsToAppsScript(store.settings);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Einstellungen konnten nicht in Google Sheets gespeichert werden." });
+    return;
+  }
   res.json({ ok: true, settings: store.settings });
 });
 
@@ -1393,7 +1565,15 @@ app.patch("/api/admin/account/password", requireAuth, async (req, res) => {
     updatedAt: new Date().toISOString(),
   };
 
+  store.settings.adminPassword = newPassword;
+
   writeStore(store);
+  try {
+    await saveSettingsToAppsScript(store.settings);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Passwort konnte nicht in Google Sheets gespeichert werden." });
+    return;
+  }
   res.json({ ok: true });
 });
 
@@ -1497,29 +1677,39 @@ app.post("/api/admin/users", requireAuth, async (req, res) => {
 app.patch("/api/admin/bookings/:id", requireAuth, (req, res) => {
   const store = loadStore();
   const booking = store.bookings.find((entry) => entry.id === req.params.id);
+  const nextStatus = normalizeInquiryStatus(req.body.status);
 
-  if (!booking) {
-    res.status(404).json({ error: "Buchung nicht gefunden." });
-    return;
+  if (booking) {
+    booking.status = nextStatus;
+    writeStore(store);
   }
 
-  booking.status = String(req.body.status || booking.status);
-  writeStore(store);
-  res.json({ ok: true, booking });
+  updateInquiryStatusInAppsScript(req.params.id, nextStatus)
+    .then(() => {
+      res.json({ ok: true, booking: booking || { id: req.params.id, status: nextStatus } });
+    })
+    .catch((error) => {
+      res.status(500).json({ error: error.message || "Status konnte nicht gespeichert werden." });
+    });
 });
 
 app.patch("/api/admin/contact-requests/:id", requireAuth, (req, res) => {
   const store = loadStore();
   const contactRequest = store.contactRequests.find((entry) => entry.id === req.params.id);
+  const nextStatus = normalizeInquiryStatus(req.body.status);
 
-  if (!contactRequest) {
-    res.status(404).json({ error: "Kontaktanfrage nicht gefunden." });
-    return;
+  if (contactRequest) {
+    contactRequest.status = nextStatus;
+    writeStore(store);
   }
 
-  contactRequest.status = String(req.body.status || contactRequest.status);
-  writeStore(store);
-  res.json({ ok: true, contactRequest });
+  updateInquiryStatusInAppsScript(req.params.id, nextStatus)
+    .then(() => {
+      res.json({ ok: true, contactRequest: contactRequest || { id: req.params.id, status: nextStatus } });
+    })
+    .catch((error) => {
+      res.status(500).json({ error: error.message || "Status konnte nicht gespeichert werden." });
+    });
 });
 
 app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) => {
@@ -1532,12 +1722,20 @@ app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) =
     return;
   }
 
-  const source =
+  let source =
     inquiryType === "booking"
       ? store.bookings.find((entry) => entry.id === req.params.id)
       : inquiryType === "contact"
         ? store.contactRequests.find((entry) => entry.id === req.params.id)
         : null;
+
+  if (!source) {
+    const remoteInquiries = await getInquiriesFromAppsScript();
+    source = remoteInquiries
+      .filter((entry) => entry.type === inquiryType)
+      .map(({ type, ...entry }) => entry)
+      .find((entry) => entry.id === req.params.id);
+  }
 
   if (!source) {
     res.status(404).json({ error: "Anfrage nicht gefunden." });
@@ -1653,6 +1851,13 @@ ensureDirectories();
 
 Promise.resolve()
   .then(ensureAdminUser)
+  .then(async () => {
+    try {
+      await saveSettingsToAppsScript(loadStore().settings);
+    } catch (error) {
+      console.error("Initialer Google Sheets Sync für Einstellungen fehlgeschlagen.", error);
+    }
+  })
   .then(ensureVapidKeys)
   .then(async () => {
     try {
