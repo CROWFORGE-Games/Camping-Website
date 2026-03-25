@@ -1710,6 +1710,10 @@ label:has(select[required]) > span::after,
   transform: translate3d(0, -50%, 0);
 }
 
+.site-editor-badge[hidden] {
+  display: none !important;
+}
+
 #site-editor-contact-requests {
   position: relative;
   display: flex;
@@ -1811,6 +1815,10 @@ label:has(select[required]) > span::after,
 .site-contact-request-reply {
   display: grid;
   gap: 0.8rem;
+}
+
+.site-contact-request-reply[hidden] {
+  display: none;
 }
 
 .site-contact-request-reply textarea {

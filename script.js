@@ -2052,10 +2052,13 @@ const initPublicEditor = async () => {
 
   contactRequestsButton.addEventListener("click", async () => {
     setButtonLoading(contactRequestsButton, true);
+    contactRequestsModal.hidden = false;
+    renderContactRequests();
     try {
       await loadAdminBootstrap();
       renderContactRequests();
-      contactRequestsModal.hidden = false;
+    } catch (error) {
+      setEditorStatusMessage(error.message || "Anfragen konnten nicht geladen werden.");
     } finally {
       setButtonLoading(contactRequestsButton, false);
     }
