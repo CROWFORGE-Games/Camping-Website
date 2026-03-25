@@ -68,6 +68,11 @@ function doPost(e) {
       return jsonResponse({ ok: true });
     }
 
+    if (eventType === 'appendSpotReservation') {
+      appendSpotReservation(spreadsheet, payload);
+      return jsonResponse({ ok: true });
+    }
+
     if (eventType === 'deleteInquiry') {
       deleteInquiry(spreadsheet, payload);
       return jsonResponse({ ok: true });
@@ -196,9 +201,9 @@ function saveSettings(spreadsheet, payload) {
 function replaceSpots(spreadsheet, payload) {
   const sheetName = String(payload.sheetName || 'Spots');
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
-  const headers = ['Stellplatz', 'Stellplatznummer', 'Status'];
+  const headers = ['Stellplatz', 'Stellplatznummer', 'Status', 'Von', 'Bis'];
   const values = rows.map(function (row) {
-    return [row.stellplatz || '', row.stellplatznummer || '', row.status || ''];
+    return [row.stellplatz || '', row.stellplatznummer || '', row.status || '', row.von || '', row.bis || ''];
   });
 
   const sheet = getOrCreateSheet(spreadsheet, sheetName);
@@ -208,6 +213,23 @@ function replaceSpots(spreadsheet, payload) {
   if (values.length > 0) {
     sheet.getRange(2, 1, values.length, headers.length).setValues(values);
   }
+}
+
+function appendSpotReservation(spreadsheet, payload) {
+  const sheetName = String(payload.sheetName || 'Spots');
+  const row = payload.row || {};
+  const headers = ['Stellplatz', 'Stellplatznummer', 'Status', 'Von', 'Bis'];
+  const values = [[
+    row.stellplatz || '',
+    row.stellplatznummer || '',
+    row.status || '',
+    row.von || '',
+    row.bis || '',
+  ]];
+
+  const sheet = getOrCreateSheet(spreadsheet, sheetName);
+  writeHeaders(sheet, headers);
+  sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
 }
 
 function savePrices(spreadsheet, payload) {
@@ -394,6 +416,8 @@ function readSpots(spreadsheet, sheetName) {
       stellplatz: row[indexByHeader['Stellplatz']] || '',
       stellplatznummer: row[indexByHeader['Stellplatznummer']] || '',
       status: row[indexByHeader['Status']] || '',
+      von: row[indexByHeader['Von']] || '',
+      bis: row[indexByHeader['Bis']] || '',
     };
   });
 }

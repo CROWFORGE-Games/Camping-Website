@@ -21,6 +21,10 @@ const pitchDetailSubtitle = document.querySelector("#pitch-detail-subtitle");
 const pitchDetailCloseButtons = document.querySelectorAll("[data-detail-close]");
 const pitchTemplates = document.querySelectorAll(".pitch-template-store template");
 const pricingTable = document.querySelector(".pricing-table");
+const availabilityArrivalInput = document.querySelector("#availability-arrival");
+const availabilityDepartureInput = document.querySelector("#availability-departure");
+const availabilityCalendarStatus = document.querySelector("#availability-calendar-status");
+const availabilityCalendarSummary = document.querySelector("#availability-calendar-summary");
 const LANGUAGE_STORAGE_KEY = "siteLanguage";
 const originalTextNodeContent = new WeakMap();
 let currentLanguage = (() => {
@@ -105,6 +109,7 @@ let selectedBookingPitch = null;
 let activeDetailZone = null;
 let activeDetailReadonly = false;
 let liveRefreshTimer = null;
+let availabilityIsLoading = false;
 
 const formatCurrency = (value) => currencyFormatter.format(value);
 const t = (de, en) => (currentLanguage === "en" ? en : de);
@@ -141,6 +146,84 @@ const formatDateTimeDisplay = (value) => {
   );
 
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+};
+
+const normalizeDateOnly = (value) => {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+};
+
+const getSelectedAvailabilityRange = () => {
+  const arrival =
+    normalizeDateOnly(availabilityArrivalInput?.value) ||
+    normalizeDateOnly(bookingForm?.querySelector('input[name="arrival"]')?.value);
+  const departure =
+    normalizeDateOnly(availabilityDepartureInput?.value) ||
+    normalizeDateOnly(bookingForm?.querySelector('input[name="departure"]')?.value);
+
+  return {
+    arrival,
+    departure,
+    valid: Boolean(arrival && departure && arrival < departure),
+  };
+};
+
+const setAvailabilityLoading = (isLoading) => {
+  availabilityIsLoading = Boolean(isLoading);
+
+  document.querySelectorAll(".availability-zone-count").forEach((label) => {
+    label.classList.remove("is-good", "is-low", "is-full");
+    label.classList.toggle("is-loading", availabilityIsLoading);
+    if (availabilityIsLoading) {
+      label.textContent = t("Suche freie Plätze", "Searching free pitches");
+    }
+  });
+
+  if (availabilityCalendarStatus) {
+    availabilityCalendarStatus.classList.toggle("is-loading", availabilityIsLoading);
+    availabilityCalendarStatus.textContent = availabilityIsLoading
+      ? t("Suche freie Plätze", "Searching free pitches")
+      : t("Freie Plätze geladen", "Free pitches loaded");
+  }
+
+  if (availabilityCalendarSummary && availabilityIsLoading) {
+    availabilityCalendarSummary.textContent = t("Aktualisiere Verfügbarkeit für den gewählten Reisezeitraum.", "Updating availability for the selected travel period.");
+  }
+};
+
+const syncAvailabilityDatesToForm = () => {
+  if (!bookingForm) {
+    return;
+  }
+
+  const arrivalInput = bookingForm.querySelector('input[name="arrival"]');
+  const departureInput = bookingForm.querySelector('input[name="departure"]');
+
+  if (arrivalInput && availabilityArrivalInput && arrivalInput.value !== availabilityArrivalInput.value) {
+    arrivalInput.value = availabilityArrivalInput.value;
+  }
+
+  if (departureInput && availabilityDepartureInput && departureInput.value !== availabilityDepartureInput.value) {
+    departureInput.value = availabilityDepartureInput.value;
+  }
+};
+
+const syncFormDatesToAvailability = () => {
+  if (!bookingForm) {
+    return;
+  }
+
+  const arrivalInput = bookingForm.querySelector('input[name="arrival"]');
+  const departureInput = bookingForm.querySelector('input[name="departure"]');
+
+  if (availabilityArrivalInput && arrivalInput && availabilityArrivalInput.value !== arrivalInput.value) {
+    availabilityArrivalInput.value = arrivalInput.value;
+  }
+
+  if (availabilityDepartureInput && departureInput && availabilityDepartureInput.value !== departureInput.value) {
+    availabilityDepartureInput.value = departureInput.value;
+  }
 };
 
 const translatePriceLabel = (label) =>
@@ -463,6 +546,26 @@ const groupedPitches = () => {
     });
 
   return groups;
+};
+
+const updateAvailabilityCalendarSummary = () => {
+  if (!availabilityCalendarSummary) {
+    return;
+  }
+
+  const range = getSelectedAvailabilityRange();
+
+  if (!range.valid) {
+    availabilityCalendarSummary.textContent = t("Bitte Reisezeitraum wählen.", "Please choose travel dates.");
+    return;
+  }
+
+  const total = (bootstrapData.pitches || []).length;
+  const free = (bootstrapData.pitches || []).filter((pitch) => pitch.status === "free").length;
+  availabilityCalendarSummary.textContent =
+    free === 0
+      ? t("Keine freien Plätze im gewählten Reisezeitraum.", "No free pitches in the selected travel period.")
+      : `${t("Im gewählten Reisezeitraum sind noch", "In the selected travel period there are still")} ${free} ${free === 1 ? t("freier Platz", "free pitch") : t("freie Plätze", "free pitches")} ${t("von", "out of")} ${total}.`;
 };
 
 const getDefaultTemplatePointPosition = (index) => {
@@ -851,6 +954,30 @@ const createPitchButton = (pitch, isReadonly) => {
   return button;
 };
 
+const ensureSelectedPitchStillAvailable = () => {
+  if (!preferredPitchInput) {
+    return;
+  }
+
+  const selectedLabel = String(preferredPitchInput.value || "").trim();
+
+  if (!selectedLabel || /beliebiger Stellplatz/i.test(selectedLabel)) {
+    return;
+  }
+
+  const matchingPitch = (bootstrapData.pitches || []).find((pitch) => formatPitchLabel(pitch.zone, pitch.number) === selectedLabel);
+
+  if (matchingPitch && matchingPitch.status === "free") {
+    return;
+  }
+
+  selectedBookingPitch = null;
+  preferredPitchInput.value = "";
+  if (pitchSelectionStatus) {
+    pitchSelectionStatus.textContent = t("Noch kein Wunschstellplatz ausgewählt.", "No preferred pitch selected yet.");
+  }
+};
+
 const buildFallbackPitchCanvas = (zone, pitchByNumber, isReadonly) => {
   const zoneMeta = normalizedZoneMeta[zone] || zoneDetailMeta[zone] || {};
   const canvas = document.createElement("div");
@@ -1016,7 +1143,15 @@ const updateContactLinks = () => {
 
 const loadBootstrap = async () => {
   try {
-    const response = await fetch("/api/public/bootstrap");
+    const range = getSelectedAvailabilityRange();
+    const url = new URL("/api/public/bootstrap", window.location.origin);
+
+    if (range.valid) {
+      url.searchParams.set("arrival", range.arrival);
+      url.searchParams.set("departure", range.departure);
+    }
+
+    const response = await fetch(`${url.pathname}${url.search}`);
 
     if (!response.ok) {
       return;
@@ -1036,16 +1171,31 @@ const loadBootstrap = async () => {
   }
 };
 
-const refreshPublicData = async () => {
-  await loadBootstrap();
-  updateContactLinks();
-  renderSitePlan();
-  renderPricingTable();
-  renderBookingPitchOptions();
-  updateBookingEstimate();
+const refreshPublicData = async ({ showLoading = true } = {}) => {
+  if (showLoading) {
+    setAvailabilityLoading(true);
+  }
 
-  if (activeDetailZone && pitchDetailModal && !pitchDetailModal.hidden) {
-    openPitchDetail(activeDetailZone, activeDetailReadonly);
+  try {
+    await loadBootstrap();
+    ensureSelectedPitchStillAvailable();
+    updateContactLinks();
+    renderSitePlan();
+    updateAvailabilityCalendarSummary();
+    renderPricingTable();
+    renderBookingPitchOptions();
+    updateBookingEstimate();
+
+    if (activeDetailZone && pitchDetailModal && !pitchDetailModal.hidden) {
+      openPitchDetail(activeDetailZone, activeDetailReadonly);
+    }
+  } finally {
+    setAvailabilityLoading(false);
+    if (availabilityCalendarStatus) {
+      availabilityCalendarStatus.textContent = getSelectedAvailabilityRange().valid
+        ? t("Freie Plätze aktualisiert", "Free pitches updated")
+        : t("Bitte Reisezeitraum wählen", "Please choose travel dates");
+    }
   }
 };
 
@@ -1195,6 +1345,10 @@ const STATIC_TRANSLATIONS = {
     { selector: ".intro-band .eyebrow", text: "Quick overview" },
     { selector: ".intro-band h2", text: "The most important areas at a glance" },
     { selector: ".intro-band .section-heading p:last-child", text: "All key topics are bundled here so guests can quickly find the right page for their stay, prices, requests and directions." },
+    { selector: ".overview-embed-card:nth-of-type(1) h3", text: "3D view campsite" },
+    { selector: ".overview-embed-card:nth-of-type(2) h3", text: "3D view lake pitches" },
+    { selector: ".overview-embed-card:nth-of-type(1) iframe", attr: "title", text: "3D view campsite" },
+    { selector: ".overview-embed-card:nth-of-type(2) iframe", attr: "title", text: "3D view lake pitches" },
   ],
   campingplatz: [
     { selector: "title", text: "Campsite | Hiasen Hof at Lake Thiersee" },
@@ -1237,9 +1391,19 @@ const STATIC_TRANSLATIONS = {
   ],
   preise: [
     { selector: "title", text: "Prices | Hiasen Hof at Lake Thiersee" },
+    { selector: 'meta[name="description"]', attr: "content", text: "Price overview of Hiasen Hof with daily rates and additional notes." },
     { selector: '.page-hero .eyebrow', text: "Prices" },
     { selector: '.page-hero h1', text: "All daily prices at a glance" },
     { selector: '.page-hero p', text: "The price overview is valid from 01.05.2025." },
+    { selector: ".pricing-notes .note-card:nth-of-type(1) h3", text: "Additional notes" },
+    { selector: ".pricing-notes .note-card:nth-of-type(1) li:nth-of-type(1)", text: "Lake pitches: plus EUR 2.00 per night, EUR 10.00 surcharge from one week" },
+    { selector: ".pricing-notes .note-card:nth-of-type(1) li:nth-of-type(2)", text: "One night during the high season in July and August: plus EUR 2.00 per night" },
+    { selector: ".pricing-notes .note-card:nth-of-type(1) li:nth-of-type(3)", text: "Children under 5 years are currently free according to the latest price information" },
+    { selector: ".pricing-notes .note-card:nth-of-type(2) h3", text: "Free pitches" },
+    { selector: ".pricing-notes .note-card:nth-of-type(2) p", text: "By phone at +43 664 885 305 24 or by email at mathias.mairhofer@gmail.com." },
+    { selector: ".pricing-notes .note-card:nth-of-type(3) h3", text: "Downloads and seasonal camping" },
+    { selector: ".pricing-notes .note-card:nth-of-type(3) p", text: "Download the site plan or request a waiting list and summer pitches by email." },
+    { selector: ".pricing-notes .note-card:nth-of-type(3) a", text: "Download site plan" },
   ],
   buchen: [
     { selector: "title", text: "Book | Hiasen Hof at Lake Thiersee" },
@@ -1248,6 +1412,7 @@ const STATIC_TRANSLATIONS = {
     { selector: '.page-hero p', text: "Choose your preferred free pitch, review the notes and send your request directly to Hiasen Hof. The booking only becomes binding once you receive a reply." },
     { selector: '#booking-plan-title', text: "Choose your free pitch directly" },
     { selector: '.booking-plan-header .eyebrow', text: "Preferred pitch" },
+    { selector: '#availability-calendar-title', text: "Choose arrival and departure" },
     { selector: '.status-chip.free', text: "Free" },
     { selector: '.status-chip.reserved', text: "Reserved" },
     { selector: '.status-chip.occupied', text: "Occupied" },
@@ -1425,6 +1590,59 @@ const setLanguage = (language, { reload = false } = {}) => {
 const syncLanguageButtons = () => {
   document.querySelectorAll(".language-switch-button, .editor-language-button").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.language === currentLanguage);
+  });
+};
+
+const initOverviewCardLinks = () => {
+  document.querySelectorAll(".overview-card").forEach((card) => {
+    if (card.dataset.cardLinkBound === "true") {
+      return;
+    }
+    const href = card.dataset.href;
+    const link = href ? { click: () => { window.location.href = href; } } : card.querySelector('a[href]');
+    if (!link) {
+      return;
+    }
+    card.dataset.cardLinkBound = "true";
+    card.tabIndex = 0;
+    card.setAttribute("role", "link");
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input, textarea, select")) {
+        return;
+      }
+      link.click();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        link.click();
+      }
+    });
+  });
+};
+
+const initParallaxBanners = () => {
+  const layers = Array.from(document.querySelectorAll(".hero-backdrop, .page-hero"));
+  if (!layers.length) {
+    return;
+  }
+
+  const updateParallax = () => {
+    layers.forEach((layer) => {
+      const rect = layer.getBoundingClientRect();
+      const shift = Math.max(-36, Math.min(36, rect.top * -0.08));
+      layer.style.setProperty("--hero-shift", `${shift.toFixed(2)}px`);
+    });
+  };
+
+  updateParallax();
+  window.addEventListener("scroll", updateParallax, { passive: true });
+  window.addEventListener("resize", updateParallax);
+};
+
+const initPageReadyState = () => {
+  requestAnimationFrame(() => {
+    document.body.classList.add("page-is-ready");
   });
 };
 
@@ -1657,7 +1875,15 @@ const createEditorButton = (className, label, onClick) => {
   const button = document.createElement("button");
   button.type = "button";
   button.className = className;
-  button.textContent = label;
+  if (className === "editor-pencil") {
+    button.setAttribute("aria-label", label);
+    button.innerHTML =
+      '<span class="editor-pencil-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm14.71-9.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-1.79z"/></svg></span><span class="sr-only">' +
+      label +
+      "</span>";
+  } else {
+    button.textContent = label;
+  }
   button.dataset.editorUi = "true";
   button.addEventListener("click", onClick);
   return button;
@@ -2014,6 +2240,9 @@ const saveCurrentPage = async () => {
   }
 };
 
+const buildBookingConfirmationMessage = (entry) =>
+  `Vielen Dank für Ihre Buchung, hiermit bestätige ich Ihre Buchung vom Zeitraum "${entry.arrival || "-"}" bis "${entry.departure || "-"}"${entry.preferredPitch ? `, der Platz "${entry.preferredPitch}" wurde bereits für Sie reserviert.` : "."}`;
+
 const renderContactRequests = () => {
   const list = document.querySelector("#site-contact-requests-list");
   if (!list) {
@@ -2061,6 +2290,13 @@ const renderContactRequests = () => {
           <div class="site-contact-request-reply" id="reply-${entry.id}" hidden>
             <textarea data-contact-request-reply-message="${entry.id}" rows="4" placeholder="Antwort eingeben..."></textarea>
             <div class="site-contact-request-reply-actions">
+              ${
+                entry.sourceType === "booking"
+                  ? `<button type="button" class="is-confirm" data-contact-request-confirm="${entry.id}">
+                      Buchung bestätigen
+                    </button>`
+                  : ""
+              }
               <button type="button" data-contact-request-reply-send="${entry.id}" data-request-type="${entry.sourceType}">
                 Antwort senden
               </button>
@@ -2096,10 +2332,15 @@ const renderContactRequests = () => {
     button.addEventListener("click", () => {
       const id = button.getAttribute("data-contact-request-reply-toggle");
       const replyBox = document.querySelector(`#reply-${id}`);
+      const entry = (editorState.inquiries || []).find((item) => item.id === id);
+      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
       if (!replyBox) {
         return;
       }
       replyBox.hidden = !replyBox.hidden;
+      if (!replyBox.hidden && textarea && entry?.sourceType === "booking" && !String(textarea.value || "").trim()) {
+        textarea.value = buildBookingConfirmationMessage(entry);
+      }
     });
   });
 
@@ -2131,6 +2372,38 @@ const renderContactRequests = () => {
           replyBox.hidden = true;
         }
         renderContactRequests();
+      } finally {
+        button.disabled = false;
+        button.dataset.loading = "false";
+      }
+    });
+  });
+
+  list.querySelectorAll("[data-contact-request-confirm]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-contact-request-confirm");
+      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
+      const entry = (editorState.inquiries || []).find((item) => item.id === id);
+      const message = String(textarea?.value || "").trim() || buildBookingConfirmationMessage(entry || {});
+
+      button.disabled = true;
+      button.dataset.loading = "true";
+
+      try {
+        await publicApi(`/api/admin/inquiries/booking/${id}/confirm`, {
+          method: "POST",
+          body: JSON.stringify({ message }),
+        });
+        editorState.inquiries = editorState.inquiries.map((item) => (item.id === id ? { ...item, status: "done" } : item));
+        if (textarea) {
+          textarea.value = "";
+        }
+        const replyBox = document.querySelector(`#reply-${id}`);
+        if (replyBox) {
+          replyBox.hidden = true;
+        }
+        renderContactRequests();
+        refreshPublicData({ showLoading: false }).catch(() => {});
       } finally {
         button.disabled = false;
         button.dataset.loading = "false";
@@ -2400,6 +2673,7 @@ const initPublicEditor = async () => {
   document.querySelectorAll("[data-contact-requests-close]").forEach((button) =>
     button.addEventListener("click", () => {
       contactRequestsModal.hidden = true;
+      setButtonLoading(contactRequestsButton, false);
     }),
   );
   document.querySelectorAll("[data-links-close]").forEach((button) =>
@@ -2523,6 +2797,10 @@ const initPublicEditor = async () => {
     }
     updatePitchDetailEditorUi();
   });
+
+  initOverviewCardLinks();
+  initParallaxBanners();
+  initPageReadyState();
 
   saveButton.addEventListener("click", saveCurrentPage);
 
@@ -2684,6 +2962,7 @@ const init = async () => {
     // Keep public interactions usable even when the editor backend is unavailable.
   }
 
+  syncFormDatesToAvailability();
   await refreshPublicData();
   closePitchDetail();
   zoneDetailTriggers.forEach((trigger) => {
@@ -2709,7 +2988,7 @@ const init = async () => {
     if (document.visibilityState === "hidden") {
       return;
     }
-    await refreshPublicData();
+    await refreshPublicData({ showLoading: false });
   };
 
   if (liveRefreshTimer) {
@@ -2726,9 +3005,23 @@ const init = async () => {
     }
   });
 
+  const triggerAvailabilityRefresh = async () => {
+    syncAvailabilityDatesToForm();
+    updateBookingEstimate();
+    await refreshPublicData();
+  };
+
+  [availabilityArrivalInput, availabilityDepartureInput].forEach((input) => {
+    input?.addEventListener("change", () => {
+      triggerAvailabilityRefresh().catch(() => {});
+    });
+  });
+
   if (bookingForm && formStatus) {
     const childrenAgeInput = bookingForm.querySelector('input[name="childrenAge"]');
     const bookingSubmitButton = bookingForm.querySelector('button[type="submit"]');
+    const arrivalInput = bookingForm.querySelector('input[name="arrival"]');
+    const departureInput = bookingForm.querySelector('input[name="departure"]');
     if (bookingSubmitButton && !bookingSubmitButton.dataset.defaultLabel) {
       bookingSubmitButton.dataset.defaultLabel = bookingSubmitButton.textContent.trim();
     }
@@ -2769,6 +3062,13 @@ const init = async () => {
     bookingForm.addEventListener("change", () => {
       resetBookingSubmitButton();
       updateBookingEstimate();
+    });
+
+    [arrivalInput, departureInput].forEach((input) => {
+      input?.addEventListener("change", () => {
+        syncFormDatesToAvailability();
+        refreshPublicData().catch(() => {});
+      });
     });
 
     updateBookingEstimate();
@@ -2814,6 +3114,12 @@ const init = async () => {
         setSubmitButtonLoading(bookingSubmitButton, true);
         await submitBooking();
         bookingForm.reset();
+        if (availabilityArrivalInput) {
+          availabilityArrivalInput.value = "";
+        }
+        if (availabilityDepartureInput) {
+          availabilityDepartureInput.value = "";
+        }
         selectedBookingPitch = null;
         if (preferredPitchInput) {
           preferredPitchInput.value = "";
@@ -2826,6 +3132,7 @@ const init = async () => {
           button.setAttribute("aria-pressed", "false");
         });
         updateBookingEstimate();
+        refreshPublicData().catch(() => {});
         if (bookingSubmitButton) {
           bookingSubmitButton.textContent = "Anfrage gesendet";
           bookingSubmitButton.classList.add("is-success");

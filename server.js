@@ -219,6 +219,32 @@ const appsScriptConfig = () => ({
   token: GOOGLE_APPS_SCRIPT_TOKEN,
 });
 
+const appsScriptReadCache = new Map();
+
+const appsScriptCacheTtlFor = (eventType) => {
+  const map = {
+    settings: 15000,
+    prices: 15000,
+    inquiries: 5000,
+    spots: 5000,
+  };
+
+  return map[eventType] || 5000;
+};
+
+const appsScriptCacheKey = (eventType, params = {}) =>
+  `${eventType}:${JSON.stringify(
+    Object.fromEntries(Object.entries(params).sort(([a], [b]) => a.localeCompare(b, "de"))),
+  )}`;
+
+const invalidateAppsScriptCache = (eventType) => {
+  Array.from(appsScriptReadCache.keys()).forEach((key) => {
+    if (key.startsWith(`${eventType}:`)) {
+      appsScriptReadCache.delete(key);
+    }
+  });
+};
+
 const postToAppsScript = async (eventType, payload) => {
   const config = appsScriptConfig();
 
@@ -243,6 +269,19 @@ const postToAppsScript = async (eventType, payload) => {
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || `Apps Script Fehler: ${response.status} ${response.statusText}`);
   }
+
+  if (["saveSettings"].includes(eventType)) {
+    invalidateAppsScriptCache("settings");
+  }
+  if (["savePrices"].includes(eventType)) {
+    invalidateAppsScriptCache("prices");
+  }
+  if (["booking", "contact", "deleteInquiry", "updateInquiryStatus"].includes(eventType)) {
+    invalidateAppsScriptCache("inquiries");
+  }
+  if (["spots", "appendSpotReservation"].includes(eventType)) {
+    invalidateAppsScriptCache("spots");
+  }
 };
 
 const getFromAppsScript = async (eventType, params = {}) => {
@@ -250,6 +289,12 @@ const getFromAppsScript = async (eventType, params = {}) => {
 
   if (!config.enabled) {
     return null;
+  }
+
+  const cacheKey = appsScriptCacheKey(eventType, params);
+  const cached = appsScriptReadCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
   }
 
   const url = new URL(config.url);
@@ -271,6 +316,11 @@ const getFromAppsScript = async (eventType, params = {}) => {
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || `Apps Script Fehler: ${response.status} ${response.statusText}`);
   }
+
+  appsScriptReadCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + appsScriptCacheTtlFor(eventType),
+  });
 
   return data;
 };
@@ -489,6 +539,79 @@ const formatPitchStatusForSheet = (status) => {
   return map[String(status || "").trim()] || String(status || "").trim() || "0";
 };
 
+const normalizeDateOnly = (value) => {
+  const raw = String(value || "").trim();
+
+  if (!raw) {
+    return "";
+  }
+
+  const directMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directMatch) {
+    return directMatch[1];
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysToDateOnly = (dateString, days) => {
+  const normalized = normalizeDateOnly(dateString);
+
+  if (!normalized) {
+    return "";
+  }
+
+  const date = new Date(`${normalized}T00:00:00`);
+  date.setDate(date.getDate() + Number(days || 0));
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const hasValidSelectedRange = (arrival, departure) => {
+  const start = normalizeDateOnly(arrival);
+  const end = normalizeDateOnly(departure);
+  return Boolean(start && end && start < end);
+};
+
+const rangesOverlap = (selectedArrival, selectedDeparture, entryFrom, entryTo) => {
+  const arrival = normalizeDateOnly(selectedArrival);
+  const departure = normalizeDateOnly(selectedDeparture);
+
+  if (!hasValidSelectedRange(arrival, departure)) {
+    return false;
+  }
+
+  const from = normalizeDateOnly(entryFrom);
+  const to = normalizeDateOnly(entryTo);
+
+  if (!from && !to) {
+    return true;
+  }
+
+  const effectiveFrom = from || to;
+  let effectiveTo = to || from;
+
+  if (!effectiveFrom) {
+    return false;
+  }
+
+  if (!effectiveTo || effectiveTo <= effectiveFrom) {
+    effectiveTo = addDaysToDateOnly(effectiveFrom, 1);
+  }
+
+  return arrival < effectiveTo && departure > effectiveFrom;
+};
+
 const normalizePitchZone = (value) => {
   const normalized = String(value || "")
     .trim()
@@ -543,40 +666,98 @@ const zoneLabelForZone = (zone) => {
   return map[String(zone || "").trim()] || String(zone || "Stellplatz").trim();
 };
 
-const mergePitchesWithSheetRows = (pitches, rows) => {
-  const existingPitches = new Map(
-    pitches.map((pitch) => [`${normalizePitchZone(pitch.zone || pitch.zoneLabel)}:${Number(pitch.number || 0)}`, pitch]),
+const mergePitchesWithSheetRows = (pitches, rows, selectedRange = {}) => {
+  const existingPitchMap = new Map(
+    pitches.map((pitch) => [
+      `${normalizePitchZone(pitch.zone || pitch.zoneLabel)}:${Number(pitch.number || 0)}`,
+      { ...pitch, status: pitch.status || "free", active: Boolean(pitch.active) },
+    ]),
   );
-  const rowMap = new Map();
+  const pitchMap = new Map();
+  const eventsMap = new Map();
+  let validRowCount = 0;
 
   (Array.isArray(rows) ? rows : []).forEach((row) => {
     const zone = normalizePitchZone(row.stellplatz);
     const number = Number(row.stellplatznummer || 0);
     const status = parsePitchStatusFromSheet(row.status);
+    const from = normalizeDateOnly(row.von || row.from || row.start || "");
+    const to = normalizeDateOnly(row.bis || row.to || row.end || "");
 
     if (!zone || !number || !status) {
       return;
     }
 
+    validRowCount += 1;
     const key = `${zone}:${number}`;
-    const existing = existingPitches.get(key);
-    rowMap.set(key, {
-      ...(existing || {
-        id: `${zone}-${number}`,
-        zone,
-        zoneLabel: zoneLabelForZone(zone),
-        number,
-        active: true,
-      }),
-      zone,
-      zoneLabel: existing?.zoneLabel || zoneLabelForZone(zone),
-      number,
+    const existing = existingPitchMap.get(key);
+
+    if (!pitchMap.has(key)) {
+      pitchMap.set(key, {
+        ...(existing || {
+          id: `${zone}-${number}`,
+          zone,
+          zoneLabel: zoneLabelForZone(zone),
+          number,
+          status: "free",
+          active: true,
+        }),
+      });
+    }
+
+    if (!eventsMap.has(key)) {
+      eventsMap.set(key, []);
+    }
+
+    eventsMap.get(key).push({
       status,
-      active: true,
+      from,
+      to,
     });
   });
 
-  return Array.from(rowMap.values()).sort((a, b) => {
+  if (validRowCount === 0) {
+    return [...existingPitchMap.values()].sort((a, b) => {
+      if (a.zone === b.zone) {
+        return Number(a.number || 0) - Number(b.number || 0);
+      }
+
+      return String(a.zone || "").localeCompare(String(b.zone || ""), "de");
+    });
+  }
+
+  const hasRange = hasValidSelectedRange(selectedRange.arrival, selectedRange.departure);
+  const statusRank = { free: 0, reserved: 1, occupied: 2 };
+
+  const merged = Array.from(pitchMap.entries()).map(([key, pitch]) => {
+    const events = eventsMap.get(key) || [];
+    const baseStatus =
+      events.find((entry) => !entry.from && !entry.to)?.status ||
+      pitch.status ||
+      "free";
+
+    let status = baseStatus;
+
+    if (hasRange) {
+      const overlapping = events.filter((entry) =>
+        rangesOverlap(selectedRange.arrival, selectedRange.departure, entry.from, entry.to),
+      );
+
+      if (overlapping.length > 0) {
+        status = overlapping.reduce((current, entry) => {
+          return statusRank[entry.status] > statusRank[current] ? entry.status : current;
+        }, "free");
+      }
+    }
+
+    return {
+      ...pitch,
+      status,
+      active: true,
+    };
+  });
+
+  return merged.sort((a, b) => {
     if (a.zone === b.zone) {
       return Number(a.number || 0) - Number(b.number || 0);
     }
@@ -585,7 +766,7 @@ const mergePitchesWithSheetRows = (pitches, rows) => {
   });
 };
 
-const resolvePitchesWithRemoteStatus = async (pitches) => {
+const resolvePitchesWithRemoteStatus = async (pitches, selectedRange = {}) => {
   const config = appsScriptConfig();
   const freeFallback = pitches.map((pitch) => ({ ...pitch, status: "free" }));
 
@@ -602,7 +783,7 @@ const resolvePitchesWithRemoteStatus = async (pitches) => {
       return freeFallback;
     }
 
-    return mergePitchesWithSheetRows(freeFallback, data.rows);
+    return mergePitchesWithSheetRows(freeFallback, data.rows, selectedRange);
   } catch (error) {
     console.error("Spots konnten nicht aus Google Sheets gelesen werden.", error);
     return freeFallback;
@@ -693,7 +874,7 @@ const syncContactRequestToGoogleSheets = async (contactRequest) => {
 };
 
 const syncPitchesToGoogleSheets = async (pitches) => {
-  const headers = ["Stellplatz", "Stellplatznummer", "Status"];
+  const headers = ["Stellplatz", "Stellplatznummer", "Status", "Von", "Bis"];
   const rows = [...pitches]
     .sort((a, b) => {
       if (a.zoneLabel === b.zoneLabel) {
@@ -701,7 +882,13 @@ const syncPitchesToGoogleSheets = async (pitches) => {
       }
       return String(a.zoneLabel || "").localeCompare(String(b.zoneLabel || ""), "de");
     })
-    .map((pitch) => [String(pitch.zoneLabel || pitch.zone || "Stellplatz"), Number(pitch.number || 0), formatPitchStatusForSheet(pitch.status)]);
+    .map((pitch) => [
+      String(pitch.zoneLabel || pitch.zone || "Stellplatz"),
+      Number(pitch.number || 0),
+      formatPitchStatusForSheet(pitch.status),
+      "",
+      "",
+    ]);
 
   await clearAndReplaceSheet(GOOGLE_SHEETS_SPOTS_SHEET, headers, rows);
 };
@@ -766,6 +953,19 @@ const updateInquiryStatusInAppsScript = async (id, status) => {
     sheetName: GOOGLE_APPS_SCRIPT_CONTACT_SHEET,
     id,
     status,
+  });
+};
+
+const appendSpotReservationToAppsScript = async ({ zoneLabel, number, status, from, to }) => {
+  await postToAppsScript("appendSpotReservation", {
+    sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
+    row: {
+      stellplatz: zoneLabel,
+      stellplatznummer: number,
+      status: formatPitchStatusForSheet(status),
+      von: normalizeDateOnly(from),
+      bis: normalizeDateOnly(to),
+    },
   });
 };
 
@@ -929,6 +1129,28 @@ const syncStorePricesFromAppsScript = async (store) => {
   }
 };
 
+const ensureSpotsSeededInAppsScript = async (pitches) => {
+  const config = appsScriptConfig();
+
+  if (!config.enabled) {
+    return;
+  }
+
+  try {
+    const existing = await getFromAppsScript("spots", {
+      sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
+    });
+
+    if (Array.isArray(existing?.rows) && existing.rows.length > 0) {
+      return;
+    }
+  } catch (error) {
+    console.error("Spots konnten vor dem Initial-Seed nicht gelesen werden.", error);
+  }
+
+  await syncPitchesToAppsScript(pitches);
+};
+
 const syncStoreSettingsFromAppsScript = async (store) => {
   const config = appsScriptConfig();
 
@@ -973,7 +1195,28 @@ const syncStoreSettingsFromAppsScript = async (store) => {
 };
 
 const syncPitchesToAppsScript = async (pitches) => {
-  const rows = [...pitches]
+  let datedRows = [];
+
+  try {
+    const existing = await getFromAppsScript("spots", {
+      sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
+    });
+    if (Array.isArray(existing?.rows)) {
+      datedRows = existing.rows
+        .filter((row) => normalizeDateOnly(row.von || row.from || "") || normalizeDateOnly(row.bis || row.to || ""))
+        .map((row) => ({
+          stellplatz: row.stellplatz || "",
+          stellplatznummer: row.stellplatznummer || "",
+          status: row.status || "0",
+          von: normalizeDateOnly(row.von || row.from || ""),
+          bis: normalizeDateOnly(row.bis || row.to || ""),
+        }));
+    }
+  } catch (error) {
+    console.error("Bestehende Spot-Zeiträume konnten nicht geladen werden.", error);
+  }
+
+  const baseRows = [...pitches]
     .sort((a, b) => {
       if (a.zoneLabel === b.zoneLabel) {
         return Number(a.number || 0) - Number(b.number || 0);
@@ -983,8 +1226,12 @@ const syncPitchesToAppsScript = async (pitches) => {
     .map((pitch) => ({
       stellplatz: String(pitch.zoneLabel || pitch.zone || "Stellplatz"),
       stellplatznummer: Number(pitch.number || 0),
-      status: formatPitchStatusForSheet(pitch.status),
+      status: "0",
+      von: "",
+      bis: "",
     }));
+
+  const rows = [...baseRows, ...datedRows];
 
   await postToAppsScript("spots", {
     sheetName: GOOGLE_APPS_SCRIPT_SPOTS_SHEET,
@@ -1368,10 +1615,13 @@ app.use("/assets", express.static(path.join(ROOT_DIR, "assets")));
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/admin", express.static(ADMIN_DIR));
 
-app.get("/api/public/bootstrap", async (_req, res) => {
+app.get("/api/public/bootstrap", async (req, res) => {
   let store = await syncStoreSettingsFromAppsScript(loadStore());
   store = await syncStorePricesFromAppsScript(store);
-  const pitches = await resolvePitchesWithRemoteStatus(store.pitches.filter((pitch) => pitch.active));
+  const pitches = await resolvePitchesWithRemoteStatus(store.pitches.filter((pitch) => pitch.active), {
+    arrival: String(req.query.arrival || "").trim(),
+    departure: String(req.query.departure || "").trim(),
+  });
   res.json(publicBootstrap(store, pitches));
 });
 
@@ -1862,6 +2112,74 @@ app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) =
   res.json({ ok: true });
 });
 
+app.post("/api/admin/inquiries/booking/:id/confirm", requireAuth, async (req, res) => {
+  const store = loadStore();
+  const message = String(req.body.message || "").trim();
+
+  let source = store.bookings.find((entry) => entry.id === req.params.id);
+
+  if (!source) {
+    const remoteInquiries = await getInquiriesFromAppsScript();
+    source = remoteInquiries
+      ?.filter((entry) => entry.type === "booking")
+      .map(({ type, ...entry }) => entry)
+      .find((entry) => entry.id === req.params.id);
+  }
+
+  if (!source) {
+    res.status(404).json({ error: "Buchungsanfrage nicht gefunden." });
+    return;
+  }
+
+  if (!source.email) {
+    res.status(400).json({ error: "Für diese Buchungsanfrage ist keine E-Mail-Adresse vorhanden." });
+    return;
+  }
+
+  const preferredPitch = parsePreferredPitch(source.preferredPitch);
+  const zoneLabel = String(source.preferredPitchZone || preferredPitch.label || "").trim();
+  const pitchNumber = Number(source.preferredPitchNumber || preferredPitch.number || 0);
+
+  if (!zoneLabel || !pitchNumber) {
+    res.status(400).json({ error: "Für die Buchungsbestätigung wird ein konkreter Wunschstellplatz benötigt." });
+    return;
+  }
+
+  if (!normalizeDateOnly(source.arrival) || !normalizeDateOnly(source.departure)) {
+    res.status(400).json({ error: "Für die Buchungsbestätigung werden An- und Abreisedatum benötigt." });
+    return;
+  }
+
+  try {
+    await sendInquiryReplyViaResend({ ...source, type: "booking" }, message);
+    await appendSpotReservationToAppsScript({
+      zoneLabel,
+      number: pitchNumber,
+      status: "reserved",
+      from: source.arrival,
+      to: source.departure,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Buchung konnte nicht bestätigt werden." });
+    return;
+  }
+
+  source.repliedAt = new Date().toISOString();
+  source.repliedBy = req.user.email;
+  source.status = "done";
+  source.confirmedAt = new Date().toISOString();
+  writeStore(store);
+
+  try {
+    await updateInquiryStatusInAppsScript(req.params.id, "done");
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Buchung wurde bestätigt, aber der Status konnte nicht gespeichert werden." });
+    return;
+  }
+
+  res.json({ ok: true });
+});
+
 app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
   const store = loadStore();
   const inquiryType = String(req.params.type || "").trim().toLowerCase();
@@ -1976,7 +2294,7 @@ Promise.resolve()
   .then(ensureVapidKeys)
   .then(async () => {
     try {
-      await syncPitchesToAppsScript(loadStore().pitches);
+      await ensureSpotsSeededInAppsScript(loadStore().pitches);
     } catch (error) {
       console.error("Initialer Google Sheets Sync für Spots fehlgeschlagen.", error);
     }

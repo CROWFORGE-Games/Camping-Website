@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" href="./assets/HiasenHofLogo.png">
     <link rel="stylesheet" href="./styles.css">
   </head>
-  <body class="is-editor-active" style="">
+  <body>
     <div class="site-shell">
       <header class="site-header">
         <a class="brand" href="./index.html" aria-label="Hiasen Hof Startseite">
@@ -119,6 +119,21 @@
                 <div class="availability-water">Thiersee</div>
               </div>
             </div>
+
+            <section class="availability-calendar-card" aria-labelledby="availability-calendar-title">
+              <div class="availability-calendar-header">
+                <div>
+                  <p class="eyebrow">Reisezeitraum</p>
+                  <h3 id="availability-calendar-title">An- und Abreise wählen</h3>
+                </div>
+                <p class="availability-calendar-status is-loading" id="availability-calendar-status">Suche freie Plätze</p>
+              </div>
+              <div class="form-grid compact availability-calendar-grid">
+                <label><span>Anreise</span><input type="date" id="availability-arrival"></label>
+                <label><span>Abreise</span><input type="date" id="availability-departure"></label>
+              </div>
+              <p class="availability-calendar-summary" id="availability-calendar-summary">Bitte Reisezeitraum wählen.</p>
+            </section>
 
             <div class="pitch-detail-modal" id="pitch-detail-modal" hidden="">
               <div class="pitch-detail-backdrop" data-detail-close=""></div>
