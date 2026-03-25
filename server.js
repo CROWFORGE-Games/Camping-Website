@@ -1778,8 +1778,10 @@ app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
   }
 
   const entryIndex = store[collectionKey].findIndex((entry) => entry.id === req.params.id);
+  const remoteInquiries = await getInquiriesFromAppsScript();
+  const existsRemotely = remoteInquiries.some((entry) => entry.type === inquiryType && entry.id === req.params.id);
 
-  if (entryIndex === -1) {
+  if (entryIndex === -1 && !existsRemotely) {
     res.status(404).json({ error: "Anfrage nicht gefunden." });
     return;
   }
@@ -1791,8 +1793,10 @@ app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
     return;
   }
 
-  store[collectionKey].splice(entryIndex, 1);
-  writeStore(store);
+  if (entryIndex !== -1) {
+    store[collectionKey].splice(entryIndex, 1);
+    writeStore(store);
+  }
   res.json({ ok: true, id: req.params.id, type: inquiryType });
 });
 
