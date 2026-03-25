@@ -1004,7 +1004,7 @@ const buildAdminInquiries = (adminData = {}) => {
       sourceType: "booking",
       title: entry.name || "Unbekannt",
       subtitle: entry.preferredPitch || "Reservierungsanfrage",
-      detail: [entry.arrival, entry.departure].filter(Boolean).join(" bis ") || "Reservierungsanfrage",
+      detail: "",
     })),
     ...contactRequests.map((entry) => ({
       ...entry,
@@ -1085,7 +1085,7 @@ const editorHtml = `
         <button type="button" id="site-editor-enable">Edit-Modus</button>
         <button type="button" id="site-editor-save">Seite speichern</button>
         <button type="button" id="site-editor-prices">Preise bearbeiten</button>
-        <button type="button" id="site-editor-contact-requests">Anfragen</button>
+        <button type="button" id="site-editor-contact-requests"><span data-button-label>Anfragen</span><span class="site-editor-badge" id="site-editor-contact-requests-badge" hidden>0</span></button>
         <button type="button" id="site-editor-settings">Einstellungen</button>
         <button type="button" id="site-editor-logout">Logout</button>
         <p id="site-editor-status"></p>
@@ -1581,6 +1581,8 @@ const renderContactRequests = () => {
     return;
   }
 
+  updateInquiryBadge();
+
   if (!editorState.inquiries || editorState.inquiries.length === 0) {
     list.innerHTML = '<p class="footer-note">Noch keine Anfragen vorhanden.</p>';
     return;
@@ -1631,20 +1633,23 @@ const renderContactRequests = () => {
     .join("");
 
   list.querySelectorAll("[data-contact-request-status]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       const id = button.getAttribute("data-contact-request-status");
       const requestType = button.getAttribute("data-request-type");
       const status = button.getAttribute("data-status-value");
       const endpoint = requestType === "booking" ? `/api/admin/bookings/${id}` : `/api/admin/contact-requests/${id}`;
-      const result = await publicApi(endpoint, {
+      const previousInquiries = [...editorState.inquiries];
+      editorState.inquiries = editorState.inquiries.map((entry) => (entry.id === id ? { ...entry, status } : entry));
+      renderContactRequests();
+
+      publicApi(endpoint, {
         method: "PATCH",
         body: JSON.stringify({ status }),
+      }).catch((error) => {
+        editorState.inquiries = previousInquiries;
+        renderContactRequests();
+        setEditorStatusMessage(error.message);
       });
-      const resultEntry = result.booking || result.contactRequest || {};
-      editorState.inquiries = editorState.inquiries.map((entry) =>
-        entry.id === id ? { ...entry, ...resultEntry, status } : entry,
-      );
-      renderContactRequests();
     });
   });
 
@@ -1678,6 +1683,7 @@ const renderContactRequests = () => {
           method: "POST",
           body: JSON.stringify({ message }),
         });
+        editorState.inquiries = editorState.inquiries.map((entry) => (entry.id === id ? { ...entry, status: "done" } : entry));
         if (textarea) {
           textarea.value = "";
         }
@@ -1685,6 +1691,7 @@ const renderContactRequests = () => {
         if (replyBox) {
           replyBox.hidden = true;
         }
+        renderContactRequests();
       } finally {
         button.disabled = false;
         button.dataset.loading = "false";
@@ -1693,25 +1700,53 @@ const renderContactRequests = () => {
   });
 
   list.querySelectorAll("[data-contact-request-delete]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       const id = button.getAttribute("data-contact-request-delete");
       const requestType = button.getAttribute("data-request-type");
+      const previousInquiries = [...editorState.inquiries];
+      editorState.inquiries = editorState.inquiries.filter((entry) => entry.id !== id);
+      renderContactRequests();
 
-      button.disabled = true;
-      button.dataset.loading = "true";
-
-      try {
-        await publicApi(`/api/admin/inquiries/${requestType}/${id}`, {
-          method: "DELETE",
-        });
-        editorState.inquiries = editorState.inquiries.filter((entry) => entry.id !== id);
+      publicApi(`/api/admin/inquiries/${requestType}/${id}`, {
+        method: "DELETE",
+      }).catch((error) => {
+        editorState.inquiries = previousInquiries;
         renderContactRequests();
-      } finally {
-        button.disabled = false;
-        button.dataset.loading = "false";
-      }
+        setEditorStatusMessage(error.message);
+      });
     });
   });
+};
+
+const updateInquiryBadge = () => {
+  const badge = document.querySelector("#site-editor-contact-requests-badge");
+  const inquiriesButton = document.querySelector("#site-editor-contact-requests");
+  if (!badge) {
+    return;
+  }
+
+  const totalCount = (editorState.inquiries || []).length;
+  const count = (editorState.inquiries || []).filter((entry) => entry.status !== "done").length;
+
+  if (inquiriesButton) {
+    inquiriesButton.hidden = totalCount <= 0;
+  }
+
+  if (count <= 0) {
+    badge.textContent = "";
+    badge.hidden = true;
+    return;
+  }
+
+  badge.textContent = String(count);
+  badge.hidden = false;
+};
+
+const setEditorStatusMessage = (message) => {
+  const status = document.querySelector("#site-editor-status");
+  if (status) {
+    status.textContent = message;
+  }
 };
 
 const bindPitchDrag = () => {
@@ -1806,13 +1841,15 @@ const initPublicEditor = async () => {
       return;
     }
 
-    if (!button.dataset.defaultLabel) {
-      button.dataset.defaultLabel = button.textContent.trim();
+    const labelTarget = button.querySelector("[data-button-label]") || button;
+
+    if (!labelTarget.dataset.defaultLabel) {
+      labelTarget.dataset.defaultLabel = labelTarget.textContent.trim();
     }
 
     button.disabled = isLoading;
     button.dataset.loading = isLoading ? "true" : "false";
-    button.textContent = isLoading ? `${button.dataset.defaultLabel}...` : button.dataset.defaultLabel;
+    labelTarget.textContent = isLoading ? `${labelTarget.dataset.defaultLabel}...` : labelTarget.dataset.defaultLabel;
   };
 
   const clearPasswordInputs = () => {
@@ -1840,6 +1877,7 @@ const initPublicEditor = async () => {
         Array.isArray(adminData.pitches) && adminData.pitches.length > 0 ? adminData.pitches : bootstrapData.pitches,
     };
     editorState.inquiries = buildAdminInquiries(adminData);
+    updateInquiryBadge();
     updateContactLinks();
     renderSitePlan();
     renderPricingTable();

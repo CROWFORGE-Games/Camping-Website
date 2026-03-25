@@ -1756,7 +1756,14 @@ app.post("/api/admin/inquiries/:type/:id/reply", requireAuth, async (req, res) =
 
   source.repliedAt = new Date().toISOString();
   source.repliedBy = req.user.email;
+  source.status = "done";
   writeStore(store);
+  try {
+    await updateInquiryStatusInAppsScript(req.params.id, "done");
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Antwort wurde gesendet, aber der Status konnte nicht gespeichert werden." });
+    return;
+  }
   res.json({ ok: true });
 });
 
