@@ -2318,12 +2318,28 @@ const renderContactRequests = () => {
 
   list.innerHTML = editorState.inquiries
     .map(
-      (entry) => `
+      (entry) => {
+        // Für Buchungsanfragen: Datumszeile + Konflikt-Warnung berechnen
+        const isBooking = entry.sourceType === "booking";
+        const arrivalDisplay = isBooking && entry.arrival ? formatDateOnlyDisplay(entry.arrival) : "";
+        const departureDisplay = isBooking && entry.departure ? formatDateOnlyDisplay(entry.departure) : "";
+        const hasDates = arrivalDisplay && departureDisplay;
+
+        // Prüfen ob der Wunschstellplatz laut aktuellen Daten bereits belegt/reserviert ist
+        const matchingPitch = isBooking && entry.preferredPitch
+          ? (bootstrapData.pitches || []).find(
+              (pitch) => formatPitchLabel(pitch.zone, pitch.number) === entry.preferredPitch
+            )
+          : null;
+        const pitchConflict = matchingPitch && matchingPitch.status !== "free";
+
+        return `
         <article class="site-contact-request-card">
           <div class="site-contact-request-header">
             <div>
               <strong>${escapeHtml(entry.title || entry.name || "Unbekannt")}</strong>
               <p>${escapeHtml(entry.inquiryType || "Anfrage")} &middot; ${escapeHtml(entry.subtitle || "-")}</p>
+              ${hasDates ? `<p class="site-contact-request-dates">${escapeHtml(arrivalDisplay)} &ndash; ${escapeHtml(departureDisplay)}${pitchConflict ? ` <span class="site-contact-request-conflict">&#9888; Platz in diesem Zeitraum bereits belegt</span>` : ""}</p>` : ""}
             </div>
             <span class="status-chip ${entry.status === "done" ? "reserved" : "free"}">${entry.status === "done" ? "Erledigt" : "Neu"}</span>
           </div>
@@ -2363,8 +2379,8 @@ const renderContactRequests = () => {
             </div>
           </div>
         </article>
-      `,
-    )
+      `;
+      })
     .join("");
 
   // Restore open reply box state after re-render
@@ -2462,7 +2478,7 @@ const renderContactRequests = () => {
       button.dataset.loading = "true";
 
       try {
-        await publicApi(`/api/admin/inquiries/booking/${id}/confirm`, {
+        const result = await publicApi(`/api/admin/inquiries/booking/${id}/confirm`, {
           method: "POST",
           body: JSON.stringify({ message }),
         });
@@ -2476,6 +2492,11 @@ const renderContactRequests = () => {
         }
         renderContactRequests();
         refreshPublicData({ showLoading: false }).catch(() => {});
+        if (result && result.spotsWarning) {
+          setEditorStatusMessage(`Buchung bestätigt. Sheets-Warnung: ${result.spotsWarning}`);
+        }
+      } catch (error) {
+        setEditorStatusMessage(error.message || "Buchungsbestätigung fehlgeschlagen.");
       } finally {
         button.disabled = false;
         button.dataset.loading = "false";

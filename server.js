@@ -1838,24 +1838,34 @@ app.post("/api/admin/inquiries/booking/:id/confirm", requireAuth, async (req, re
   source.repliedBy = req.user.email;
   source.status = "done";
   source.confirmedAt = new Date().toISOString();
+
+  // Wenn Buchung aus Sheets kam (nicht lokal), lokal nachführen
+  const existsLocally = store.bookings.some((entry) => entry.id === source.id);
+  if (!existsLocally) {
+    store.bookings.unshift({ ...source });
+  }
   writeStore(store);
 
-  // Fire-and-forget: Sheets-Einträge sind nicht-kritisch
-  appendSpotReservationToAppsScript({
-    zoneLabel,
-    number: pitchNumber,
-    status: "reserved",
-    from: source.arrival,
-    to: source.departure,
-  }).catch((error) => {
+  // Sheets: Stellplatz als reserviert eintragen – Ergebnis in Response zurückgeben
+  let spotsWarning = null;
+  try {
+    await appendSpotReservationToAppsScript({
+      zoneLabel,
+      number: pitchNumber,
+      status: "reserved",
+      from: source.arrival,
+      to: source.departure,
+    });
+  } catch (error) {
     console.error("Reservierung konnte nicht in Sheets eingetragen werden:", error.message);
-  });
+    spotsWarning = error.message || "Stellplatz konnte nicht in Google Sheets eingetragen werden.";
+  }
 
   updateInquiryStatusInAppsScript(req.params.id, "done").catch((error) => {
     console.error("Status konnte nicht in Sheets aktualisiert werden:", error.message);
   });
 
-  res.json({ ok: true });
+  res.json({ ok: true, spotsWarning });
 });
 
 app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {

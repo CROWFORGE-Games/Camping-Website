@@ -2067,6 +2067,20 @@ label:has(select[required]) > span::after,
   margin: 0;
 }
 
+.site-contact-request-dates {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.site-contact-request-conflict {
+  color: var(--color-occupied, #c0392b);
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-left: 0.4em;
+}
+
 .site-contact-request-meta {
   justify-content: flex-start;
   color: var(--text-soft);
