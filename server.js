@@ -159,7 +159,6 @@ const defaultStore = () => ({
     bookingRecipientEmail: BOOKING_RECIPIENT_EMAIL,
     bookingPhone: BOOKING_PHONE,
     senderName: RESEND_FROM_NAME || "Camping",
-    adminPassword: ADMIN_PASSWORD,
     vapid: {
       publicKey: VAPID_PUBLIC_KEY,
       privateKey: VAPID_PRIVATE_KEY,
@@ -170,6 +169,7 @@ const defaultStore = () => ({
   bookings: [],
   contactRequests: [],
   pushSubscriptions: [],
+  pages: {},
 });
 
 const ensureDirectories = () => {
@@ -180,7 +180,11 @@ const ensureDirectories = () => {
   });
 };
 
+let storeCache = null;
+
 const loadStore = () => {
+  if (storeCache) return storeCache;
+
   if (!fs.existsSync(STORE_FILE)) {
     const store = defaultStore();
     writeStore(store);
@@ -189,18 +193,24 @@ const loadStore = () => {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_FILE, "utf8"));
-    return {
+    const parsedSettings = { ...(parsed.settings || {}) };
+    // adminPassword nie im Klartext im Speicher halten (Migration alter Stores)
+    delete parsedSettings.adminPassword;
+
+    storeCache = {
       ...defaultStore(),
       ...parsed,
       settings: {
         ...defaultStore().settings,
-        ...(parsed.settings || {}),
+        ...parsedSettings,
         vapid: {
           ...defaultStore().settings.vapid,
-          ...((parsed.settings || {}).vapid || {}),
+          ...(parsedSettings.vapid || {}),
         },
       },
+      pages: parsed.pages || {},
     };
+    return storeCache;
   } catch (error) {
     console.error("Store konnte nicht gelesen werden, Standarddaten werden genutzt.", error);
     const store = defaultStore();
@@ -210,6 +220,7 @@ const loadStore = () => {
 };
 
 const writeStore = (store) => {
+  storeCache = store;
   fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
 };
 
@@ -325,209 +336,6 @@ const getFromAppsScript = async (eventType, params = {}) => {
   return data;
 };
 
-const googleTokenCache = {
-  accessToken: "",
-  expiresAt: 0,
-};
-
-const base64UrlEncode = (value) =>
-  Buffer.from(value)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-
-const extractSpreadsheetId = (value) => {
-  const trimmed = String(value || "").trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : trimmed;
-};
-
-const sheetsConfig = () => ({
-  enabled:
-    GOOGLE_SHEETS_ENABLED &&
-    Boolean(extractSpreadsheetId(GOOGLE_SHEETS_SPREADSHEET_ID)) &&
-    Boolean(GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL) &&
-    Boolean(GOOGLE_SHEETS_PRIVATE_KEY),
-  spreadsheetId: extractSpreadsheetId(GOOGLE_SHEETS_SPREADSHEET_ID),
-  serviceAccountEmail: GOOGLE_SHEETS_SERVICE_ACCOUNT_EMAIL,
-  privateKey: GOOGLE_SHEETS_PRIVATE_KEY,
-});
-
-const isMissingSheetError = (message) =>
-  /unable to parse range|not found|requested entity was not found/i.test(String(message || ""));
-
-const getGoogleSheetsAccessToken = async () => {
-  const config = sheetsConfig();
-
-  if (!config.enabled) {
-    return "";
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-
-  if (googleTokenCache.accessToken && googleTokenCache.expiresAt - 60 > now) {
-    return googleTokenCache.accessToken;
-  }
-
-  const header = base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = base64UrlEncode(
-    JSON.stringify({
-      iss: config.serviceAccountEmail,
-      scope: "https://www.googleapis.com/auth/spreadsheets",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: now + 3600,
-      iat: now,
-    }),
-  );
-  const unsignedToken = `${header}.${payload}`;
-  const signer = crypto.createSign("RSA-SHA256");
-  signer.update(unsignedToken);
-  signer.end();
-  const signature = signer.sign(config.privateKey);
-  const assertion = `${unsignedToken}.${base64UrlEncode(signature)}`;
-
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || data.error || "Google OAuth Token konnte nicht geladen werden.");
-  }
-
-  googleTokenCache.accessToken = data.access_token;
-  googleTokenCache.expiresAt = now + Number(data.expires_in || 3600);
-  return googleTokenCache.accessToken;
-};
-
-const googleSheetsRequest = async (pathname, options = {}) => {
-  const config = sheetsConfig();
-
-  if (!config.enabled) {
-    return null;
-  }
-
-  const accessToken = await getGoogleSheetsAccessToken();
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}${pathname}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const errorMessage =
-      data.error?.message ||
-      data.error_description ||
-      `${response.status} ${response.statusText}`;
-    throw new Error(errorMessage);
-  }
-
-  return data;
-};
-
-const ensureSheetExists = async (sheetName) => {
-  if (!sheetsConfig().enabled) {
-    return;
-  }
-
-  try {
-    await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}`);
-  } catch (error) {
-    if (!isMissingSheetError(error.message)) {
-      throw error;
-    }
-
-    try {
-      await googleSheetsRequest(":batchUpdate", {
-        method: "POST",
-        body: JSON.stringify({
-          requests: [
-            {
-              addSheet: {
-                properties: {
-                  title: sheetName,
-                },
-              },
-            },
-          ],
-        }),
-      });
-    } catch (batchError) {
-      if (!/already exists/i.test(String(batchError.message || ""))) {
-        throw batchError;
-      }
-    }
-  }
-};
-
-const updateSheetHeader = async (sheetName, headers) => {
-  await ensureSheetExists(sheetName);
-  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}?valueInputOption=RAW`, {
-    method: "PUT",
-    body: JSON.stringify({
-      range: `${sheetName}!A1`,
-      majorDimension: "ROWS",
-      values: [headers],
-    }),
-  });
-};
-
-const appendSheetRow = async (sheetName, headers, row) => {
-  if (!sheetsConfig().enabled) {
-    return;
-  }
-
-  await updateSheetHeader(sheetName, headers);
-  await googleSheetsRequest(
-    `/values/${encodeURIComponent(`${sheetName}!A:Z`)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        majorDimension: "ROWS",
-        values: [row],
-      }),
-    },
-  );
-};
-
-const clearAndReplaceSheet = async (sheetName, headers, rows) => {
-  if (!sheetsConfig().enabled) {
-    return;
-  }
-
-  await ensureSheetExists(sheetName);
-  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A:Z`)}:clear`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-  await googleSheetsRequest(`/values/${encodeURIComponent(`${sheetName}!A1`)}?valueInputOption=RAW`, {
-    method: "PUT",
-    body: JSON.stringify({
-      range: `${sheetName}!A1`,
-      majorDimension: "ROWS",
-      values: [headers, ...rows],
-    }),
-  });
-};
 
 const formatPitchStatusForSheet = (status) => {
   const map = {
@@ -807,91 +615,6 @@ const parsePreferredPitch = (value) => {
   };
 };
 
-const syncBookingsToGoogleSheets = async (booking) => {
-  const preferredPitch = parsePreferredPitch(booking.preferredPitch);
-  const headers = [
-    "Erstellt am",
-    "Status",
-    "Name",
-    "E-Mail",
-    "Telefon",
-    "Straße",
-    "PLZ / Ort",
-    "Land",
-    "Anreise",
-    "Abreise",
-    "Wunschstellplatz",
-    "Wunschstellplatzbereich",
-    "Wunschstellplatznummer",
-    "Platzwahl",
-    "Erwachsene",
-    "Kinder",
-    "Alter der Kinder",
-    "Geschätzter Gesamtpreis",
-    "Nachricht",
-    "ID",
-  ];
-  const row = [
-    formatDateTimeForDisplay(booking.createdAt),
-    booking.status,
-    booking.name,
-    booking.email,
-    booking.phone,
-    booking.street,
-    booking.city,
-    booking.country,
-    booking.arrival,
-    booking.departure,
-    booking.preferredPitch,
-    preferredPitch.label,
-    preferredPitch.number,
-    Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "",
-    booking.adults,
-    booking.children,
-    booking.childrenAge,
-    booking.estimatedTotal,
-    booking.message,
-    booking.id,
-  ];
-
-  await appendSheetRow(GOOGLE_SHEETS_BOOKINGS_SHEET, headers, row);
-};
-
-const syncContactRequestToGoogleSheets = async (contactRequest) => {
-  const headers = ["Erstellt am", "Status", "Name", "E-Mail", "Telefon", "Betreff", "Nachricht", "ID"];
-  const row = [
-    formatDateTimeForDisplay(contactRequest.createdAt),
-    contactRequest.status,
-    contactRequest.name,
-    contactRequest.email,
-    contactRequest.phone,
-    contactRequest.subject,
-    contactRequest.message,
-    contactRequest.id,
-  ];
-
-  await appendSheetRow(GOOGLE_SHEETS_CONTACT_SHEET, headers, row);
-};
-
-const syncPitchesToGoogleSheets = async (pitches) => {
-  const headers = ["Stellplatz", "Stellplatznummer", "Status", "Von", "Bis"];
-  const rows = [...pitches]
-    .sort((a, b) => {
-      if (a.zoneLabel === b.zoneLabel) {
-        return Number(a.number || 0) - Number(b.number || 0);
-      }
-      return String(a.zoneLabel || "").localeCompare(String(b.zoneLabel || ""), "de");
-    })
-    .map((pitch) => [
-      String(pitch.zoneLabel || pitch.zone || "Stellplatz"),
-      Number(pitch.number || 0),
-      formatPitchStatusForSheet(pitch.status),
-      "",
-      "",
-    ]);
-
-  await clearAndReplaceSheet(GOOGLE_SHEETS_SPOTS_SHEET, headers, rows);
-};
 
 const syncBookingToAppsScript = async (booking) => {
   const preferredPitch = parsePreferredPitch(booking.preferredPitch);
@@ -1172,15 +895,12 @@ const syncStoreSettingsFromAppsScript = async (store) => {
       }
     });
 
-    if (remoteSettings.adminPassword && remoteSettings.adminPassword !== store.settings.adminPassword) {
-      store.settings.adminPassword = remoteSettings.adminPassword;
+    if (remoteSettings.adminPassword) {
       const adminUser = store.users.find((entry) => entry.role === "admin");
-
       if (adminUser) {
         adminUser.passwordHash = await bcrypt.hash(remoteSettings.adminPassword, 12);
+        hasChanges = true;
       }
-
-      hasChanges = true;
     }
 
     if (hasChanges) {
@@ -1272,12 +992,8 @@ const ensureVapidKeys = () => {
 
 const editableFileBySlug = (slug) => EDITABLE_FILES.find((entry) => entry.slug === slug);
 const normalizeLanguage = (value) => (String(value || "").trim().toLowerCase() === "en" ? "en" : "de");
-const pageOverrideCandidates = (file, language = "de") => {
-  const normalizedLanguage = normalizeLanguage(language);
-  return normalizedLanguage === "en"
-    ? [path.join(PAGE_OVERRIDES_DIR, "en", file)]
-    : [path.join(PAGE_OVERRIDES_DIR, "de", file), path.join(PAGE_OVERRIDES_DIR, file)];
-};
+
+const pageStoreKey = (slug, language = "de") => `${normalizeLanguage(language)}:${slug}`;
 
 const readEditablePage = (slug, language = "de") => {
   const entry = editableFileBySlug(slug);
@@ -1286,13 +1002,15 @@ const readEditablePage = (slug, language = "de") => {
     return null;
   }
 
-  const sourcePath =
-    pageOverrideCandidates(entry.file, language).find((candidate) => fs.existsSync(candidate)) ||
-    path.join(ROOT_DIR, entry.file);
+  const store = loadStore();
+  const key = pageStoreKey(slug, language);
+  const storedContent = store.pages && store.pages[key];
+
+  const content = storedContent || fs.readFileSync(path.join(ROOT_DIR, entry.file), "utf8");
 
   return {
     ...entry,
-    content: fs.readFileSync(sourcePath, "utf8"),
+    content,
   };
 };
 
@@ -1303,16 +1021,25 @@ const writeEditablePage = (slug, content, language = "de") => {
     return false;
   }
 
-  const normalizedLanguage = normalizeLanguage(language);
-  const targetDir =
-    normalizedLanguage === "en" ? path.join(PAGE_OVERRIDES_DIR, "en") : path.join(PAGE_OVERRIDES_DIR, "de");
-  fs.mkdirSync(targetDir, { recursive: true });
-  fs.writeFileSync(path.join(targetDir, entry.file), content, "utf8");
+  const store = loadStore();
+  if (!store.pages) store.pages = {};
+  store.pages[pageStoreKey(slug, language)] = content;
+  writeStore(store);
   return true;
 };
 
-const publicPagePath = (file, language = "de") => {
-  return pageOverrideCandidates(file, language).find((candidate) => fs.existsSync(candidate)) || path.join(ROOT_DIR, file);
+const publicPageContent = (file, language = "de") => {
+  const entry = EDITABLE_FILES.find((e) => e.file === file);
+
+  if (entry) {
+    const store = loadStore();
+    const key = pageStoreKey(entry.slug, language);
+    if (store.pages && store.pages[key]) {
+      return store.pages[key];
+    }
+  }
+
+  return fs.readFileSync(path.join(ROOT_DIR, file), "utf8");
 };
 
 const publicBootstrap = (store, pitches = store.pitches.filter((pitch) => pitch.active)) => ({
@@ -1356,15 +1083,15 @@ const configureWebPush = (store) => {
   }
 };
 
-const sendBookingNotification = async (booking) => {
+const sendPushNotification = async (title, body) => {
   const store = loadStore();
   configureWebPush(store);
 
-  const payload = JSON.stringify({
-    title: "Neue Buchungsanfrage",
-    body: `${booking.name} · ${booking.arrival} bis ${booking.departure}`,
-    url: "/admin/",
-  });
+  if (!store.pushSubscriptions || store.pushSubscriptions.length === 0) {
+    return;
+  }
+
+  const payload = JSON.stringify({ title, body, url: "/admin/" });
 
   const results = await Promise.allSettled(
     store.pushSubscriptions.map((subscription) =>
@@ -1374,11 +1101,7 @@ const sendBookingNotification = async (booking) => {
 
   const validSubscriptions = store.pushSubscriptions.filter((subscription, index) => {
     const result = results[index];
-
-    if (result.status === "fulfilled") {
-      return true;
-    }
-
+    if (result.status === "fulfilled") return true;
     const statusCode = result.reason && result.reason.statusCode;
     return statusCode !== 404 && statusCode !== 410;
   });
@@ -1522,59 +1245,34 @@ const sendInquiryReplyViaResend = async (entry, replyMessage) => {
   return true;
 };
 
-const sendBookingEmail = async (booking) => {
-  const store = loadStore();
-  const smtp = store.settings.smtp || {};
-  const recipient = store.settings.bookingRecipientEmail;
 
-  if (!recipient || !smtp.host || !smtp.fromEmail) {
-    throw new Error("E-Mail-Versand ist noch nicht eingerichtet. Bitte SMTP-Daten in der Admin-Konsole hinterlegen.");
+// Einfaches In-Memory Rate Limiting (kein externes Package nötig)
+const rateLimitStore = new Map();
+
+const rateLimit = (maxRequests, windowMs = 60000) => (req, res, next) => {
+  const key = req.ip || "unknown";
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  const timestamps = (rateLimitStore.get(key) || []).filter((t) => t > windowStart);
+
+  if (timestamps.length >= maxRequests) {
+    res.status(429).json({ error: "Zu viele Anfragen. Bitte warten Sie einen Moment." });
+    return;
   }
 
-  const transporter = nodemailer.createTransport({
-    host: smtp.host,
-    port: Number(smtp.port || 587),
-    secure: Boolean(smtp.secure),
-    auth: smtp.user
-      ? {
-          user: smtp.user,
-          pass: smtp.pass,
-        }
-      : undefined,
-  });
+  timestamps.push(now);
+  rateLimitStore.set(key, timestamps);
 
-  const pitchList = Array.isArray(booking.pitchTypes) ? booking.pitchTypes.join(", ") : "-";
+  // Alten Einträge gelegentlich bereinigen (jede 500. Anfrage)
+  if (rateLimitStore.size > 500) {
+    for (const [ip, ts] of rateLimitStore.entries()) {
+      if (ts.every((t) => t <= windowStart)) {
+        rateLimitStore.delete(ip);
+      }
+    }
+  }
 
-  await transporter.sendMail({
-    from: `"${smtp.fromName || "Hiasen Hof Website"}" <${smtp.fromEmail}>`,
-    to: recipient,
-    subject: `Neue Buchungsanfrage ${booking.arrival} bis ${booking.departure}`,
-    text: [
-      "Neue Buchungsanfrage über die Website",
-      "",
-      `Name: ${booking.name}`,
-      `Straße: ${booking.street}`,
-      `PLZ / Ort: ${booking.city}`,
-      `Land: ${booking.country}`,
-      `E-Mail: ${booking.email}`,
-      `Telefon: ${booking.phone}`,
-      "",
-      `Anreise: ${booking.arrival}`,
-      `Abreise: ${booking.departure}`,
-      `Wunschstellplatz: ${booking.preferredPitch || "-"}`,
-      `Platzwahl: ${pitchList}`,
-      `Erwachsene: ${booking.adults}`,
-      `Kinder: ${booking.children}`,
-      `Alter der Kinder: ${booking.childrenAge || "-"}`,
-      `Geschätzter Gesamtpreis: ${booking.estimatedTotal || "-"}`,
-      "",
-      `Zusätzliche Informationen: ${booking.message || "-"}`,
-      "",
-      `Erstellt: ${formatDateTimeForDisplay(booking.createdAt)}`,
-    ].join("\n"),
-  });
-
-  return true;
+  next();
 };
 
 const uploadStorage = multer.diskStorage({
@@ -1625,7 +1323,7 @@ app.get("/api/public/bootstrap", async (req, res) => {
   res.json(publicBootstrap(store, pitches));
 });
 
-app.post("/api/public/bookings", async (req, res) => {
+app.post("/api/public/bookings", rateLimit(10), async (req, res) => {
   const store = loadStore();
   const booking = {
     id: crypto.randomUUID(),
@@ -1671,7 +1369,10 @@ app.post("/api/public/bookings", async (req, res) => {
   }
 
   try {
-    await sendBookingNotification(booking);
+    await sendPushNotification(
+      "Neue Buchungsanfrage",
+      `${booking.name} · ${booking.arrival} bis ${booking.departure}`,
+    );
   } catch (error) {
     console.error("Push-Benachrichtigung konnte nicht gesendet werden.", error);
   }
@@ -1685,40 +1386,8 @@ app.post("/api/public/bookings", async (req, res) => {
   res.json({ ok: true, bookingId: booking.id });
 });
 
-const sendContactNotification = async (contactRequest) => {
-  const store = loadStore();
-  configureWebPush(store);
 
-  const payload = JSON.stringify({
-    title: "Neue Kontaktanfrage",
-    body: `${contactRequest.name} · ${contactRequest.subject || "Allgemeine Anfrage"}`,
-    url: "/admin/",
-  });
-
-  const results = await Promise.allSettled(
-    store.pushSubscriptions.map((subscription) =>
-      webPush.sendNotification(subscription.subscription, payload),
-    ),
-  );
-
-  const validSubscriptions = store.pushSubscriptions.filter((subscription, index) => {
-    const result = results[index];
-
-    if (result.status === "fulfilled") {
-      return true;
-    }
-
-    const statusCode = result.reason && result.reason.statusCode;
-    return statusCode !== 404 && statusCode !== 410;
-  });
-
-  if (validSubscriptions.length !== store.pushSubscriptions.length) {
-    store.pushSubscriptions = validSubscriptions;
-    writeStore(store);
-  }
-};
-
-app.post("/api/public/contact", async (req, res) => {
+app.post("/api/public/contact", rateLimit(10), async (req, res) => {
   const store = loadStore();
   const contactRequest = {
     id: crypto.randomUUID(),
@@ -1752,7 +1421,10 @@ app.post("/api/public/contact", async (req, res) => {
   }
 
   try {
-    await sendContactNotification(contactRequest);
+    await sendPushNotification(
+      "Neue Kontaktanfrage",
+      `${contactRequest.name} · ${contactRequest.subject || "Allgemeine Anfrage"}`,
+    );
   } catch (error) {
     console.error("Push-Benachrichtigung für Kontaktanfrage konnte nicht gesendet werden.", error);
   }
@@ -1766,7 +1438,7 @@ app.post("/api/public/contact", async (req, res) => {
   res.json({ ok: true, contactRequestId: contactRequest.id });
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", rateLimit(20), async (req, res) => {
   const { email, password } = req.body;
   const normalizedLogin = String(email || "").trim().toLowerCase();
   const store = await syncStoreSettingsFromAppsScript(loadStore());
@@ -1840,12 +1512,15 @@ app.get("/api/admin/bootstrap", requireAuth, async (_req, res) => {
 app.put("/api/admin/settings", requireAuth, async (req, res) => {
   const store = loadStore();
   const incoming = req.body || {};
-  const nextAdminPassword = String(incoming.adminPassword || store.settings.adminPassword || "").trim();
+  const nextAdminPassword = String(incoming.adminPassword || "").trim();
+
+  // adminPassword nur temporär für den Hash-Update verwenden, nie im Klartext speichern
+  const settingsToSave = { ...incoming };
+  delete settingsToSave.adminPassword;
 
   store.settings = {
     ...store.settings,
-    ...incoming,
-    adminPassword: nextAdminPassword || store.settings.adminPassword,
+    ...settingsToSave,
     vapid: {
       ...store.settings.vapid,
       ...(incoming.vapid || {}),
@@ -1903,8 +1578,6 @@ app.patch("/api/admin/account/password", requireAuth, async (req, res) => {
     passwordHash: await bcrypt.hash(newPassword, 12),
     updatedAt: new Date().toISOString(),
   };
-
-  store.settings.adminPassword = newPassword;
 
   writeStore(store);
   try {
@@ -2256,7 +1929,9 @@ PUBLIC_HTML_FILES.forEach((file) => {
   const routes = file === "index.html" ? ["/", "/index.html"] : [`/${file}`];
   routes.forEach((route) => {
     app.get(route, (req, res) => {
-      res.sendFile(publicPagePath(file, req.query.lang));
+      const content = publicPageContent(file, req.query.lang);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(content);
     });
   });
 });
@@ -2288,7 +1963,7 @@ Promise.resolve()
     try {
       await savePricesToAppsScript(loadStore().prices);
     } catch (error) {
-      console.error("Initialer Google Sheets Sync fÃ¼r Preise fehlgeschlagen.", error);
+      console.error("Initialer Google Sheets Sync für Preise fehlgeschlagen.", error);
     }
   })
   .then(ensureVapidKeys)

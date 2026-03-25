@@ -113,7 +113,7 @@ let availabilityIsLoading = false;
 
 const formatCurrency = (value) => currencyFormatter.format(value);
 const t = (de, en) => (currentLanguage === "en" ? en : de);
-const findPrice = (key) => Number(bootstrapData.prices.find((price) => price.key === key).amount || 0);
+const findPrice = (key) => Number(bootstrapData.prices.find((price) => price.key === key)?.amount || 0);
 const escapeHtml = (value) =>
   String(value || "")
     .replace(/&/g, "&amp;")
@@ -376,33 +376,6 @@ const ATTRIBUTE_TRANSLATIONS = {
   "Suche freie Plätze": "Searching free pitches",
 };
 
-const zoneDetailMeta = {
-  wiese1: {
-    title: "Wiese 1",
-    subtitle: "Plätze 1 bis 12",
-    note: "Detailfoto für Wiese 1 kann hier später direkt ergänzt werden.",
-    theme: "is-wiese",
-  },
-  wiese2: {
-    title: "Wiese 2",
-    subtitle: "Plätze 1 bis 11",
-    note: "Detailfoto für Wiese 2 kann hier später direkt ergänzt werden.",
-    theme: "is-wiese",
-  },
-  wiese3: {
-    title: "Wiese 3",
-    subtitle: "Plätze 12 bis 18",
-    note: "Detailfoto für Wiese 3 kann hier später direkt ergänzt werden.",
-    theme: "is-wiese",
-  },
-  see: {
-    title: "Seeplätze",
-    subtitle: "Plätze 1 bis 26",
-    note: "Detailfoto für die Seeplätze kann hier später direkt ergänzt werden.",
-    theme: "is-see",
-  },
-};
-
 const normalizedZoneMeta = {
   wiese1: {
     title: "Wiese 1",
@@ -501,7 +474,7 @@ const fallbackPitchLayouts = {
   ],
 };
 
-const getZoneDisplayName = (zone) => normalizedZoneMeta[zone]?.title || zoneDetailMeta[zone]?.title || zone;
+const getZoneDisplayName = (zone) => normalizedZoneMeta[zone]?.title || zone;
 const formatPitchLabel = (zone, number) => `${getZoneDisplayName(zone)}, Stellplatz ${number}`;
 const getPitchTemplate = (zone) => document.querySelector(`#pitch-template-${zone}`);
 const getPriceLabel = (key, fallback) => {
@@ -979,7 +952,7 @@ const ensureSelectedPitchStillAvailable = () => {
 };
 
 const buildFallbackPitchCanvas = (zone, pitchByNumber, isReadonly) => {
-  const zoneMeta = normalizedZoneMeta[zone] || zoneDetailMeta[zone] || {};
+  const zoneMeta = normalizedZoneMeta[zone] || {};
   const canvas = document.createElement("div");
   canvas.className = "pitch-detail-canvas";
 
@@ -1068,7 +1041,7 @@ const openPitchDetail = (zone, isReadonly) => {
   const groups = groupedPitches();
   const pitches = groups.get(zone) || [];
   const pitchByNumber = new Map(pitches.map((pitch) => [String(pitch.number), pitch]));
-  const zoneMeta = normalizedZoneMeta[zone] || zoneDetailMeta[zone];
+  const zoneMeta = normalizedZoneMeta[zone] || {};
   reconcilePitchTemplateWithPitches(zone, pitches);
   const template = getPitchTemplate(zone);
   const templateHasContent = Boolean(template?.content?.querySelector("[data-pitch-number]"));
