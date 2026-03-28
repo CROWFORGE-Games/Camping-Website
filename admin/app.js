@@ -26,6 +26,7 @@ const state = {
   session: null,
   bootstrap: null,
   currentPage: null,
+  bookingFilter: 'new',
 };
 
 const api = async (url, options = {}) => {
@@ -94,40 +95,194 @@ const renderStats = () => {
     .join("");
 };
 
-const bookingStatusOptions = (current) =>
-  ["new", "confirmed", "done", "cancelled"]
-    .map((status) => `<option value="${status}" ${current === status ? "selected" : ""}>${status}</option>`)
-    .join("");
+const escHtml = (str) => String(str || '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const fmtDate = (s) => {
+  if (!s) return '–';
+  const p = String(s).split('-');
+  return p.length === 3 ? `${p[2]}.${p[1]}.${p[0]}` : s;
+};
+
+const statusLabel = { new: 'Neu', confirmed: 'Bestätigt', cancelled: 'Abgelehnt', done: 'Erledigt' };
+const statusClass = { new: 'bk-badge-new', confirmed: 'bk-badge-confirmed', cancelled: 'bk-badge-cancelled', done: 'bk-badge-done' };
+
+const renderBookingCard = (booking) => {
+  const pax = [booking.adults ? `${booking.adults} Erw.` : '', booking.children ? `${booking.children} Kinder` : ''].filter(Boolean).join(', ');
+  const confirmTpl = `wir freuen uns, Ihre Buchungsanfrage bestätigen zu können.\n\nWir erwarten Sie am ${fmtDate(booking.arrival)}${booking.preferredPitch ? ` auf ${booking.preferredPitch}` : ''}.\n\nBei Fragen stehen wir Ihnen gerne zur Verfügung.\n\nMit freundlichen Grüßen\nIhr Team vom Hiasen Hof am Thiersee`;
+  const cancelTpl  = `vielen Dank für Ihre Anfrage.\n\nLeider müssen wir Ihnen mitteilen, dass wir Ihre Buchung für den gewünschten Zeitraum leider nicht ermöglichen können.\n\nWir hoffen, Sie zu einem anderen Zeitpunkt bei uns begrüßen zu dürfen.\n\nMit freundlichen Grüßen\nIhr Team vom Hiasen Hof am Thiersee`;
+  const replyTpl   = `vielen Dank für Ihre Anfrage.\n\n\n\nMit freundlichen Grüßen\nIhr Team vom Hiasen Hof am Thiersee`;
+
+  return `
+    <div class="bk-card" data-id="${escHtml(booking.id)}">
+      <div class="bk-card-top">
+        <div class="bk-card-info">
+          <span class="bk-name">${escHtml(booking.name)}</span>
+          <span class="bk-sub">${escHtml(booking.preferredPitch || 'Kein Wunschplatz')}</span>
+          <span class="bk-dates">${fmtDate(booking.arrival)} – ${fmtDate(booking.departure)}${pax ? ` · ${escHtml(pax)}` : ''}</span>
+          <div class="bk-meta">
+            ${booking.email ? `<span>${escHtml(booking.email)}</span>` : ''}
+            ${booking.phone ? `<span>${escHtml(booking.phone)}</span>` : ''}
+            ${booking.pitchTypes?.length ? `<span>${escHtml(booking.pitchTypes.join(', '))}</span>` : ''}
+            ${booking.estimatedTotal ? `<span>${escHtml(booking.estimatedTotal)}</span>` : ''}
+            <span class="bk-date-label">${booking.createdAt ? new Date(booking.createdAt).toLocaleString('de-AT') : ''}</span>
+          </div>
+          ${booking.message ? `<p class="bk-message">${escHtml(booking.message)}</p>` : ''}
+        </div>
+        <span class="bk-badge ${escHtml(statusClass[booking.status] || 'bk-badge-new')}">${escHtml(statusLabel[booking.status] || booking.status)}</span>
+      </div>
+
+      <div class="bk-actions">
+        <button class="bk-btn bk-btn-danger bk-delete-btn" data-id="${escHtml(booking.id)}">Löschen</button>
+        <button class="bk-btn bk-btn-outline bk-reply-toggle" data-id="${escHtml(booking.id)}">Antworten</button>
+      </div>
+
+      <div class="bk-reply hidden" data-id="${escHtml(booking.id)}">
+        <textarea class="bk-textarea"
+          data-confirm-tpl="${escHtml(confirmTpl)}"
+          data-cancel-tpl="${escHtml(cancelTpl)}"
+          data-reply-tpl="${escHtml(replyTpl)}"
+          rows="6"
+        >${escHtml(replyTpl)}</textarea>
+        <p class="bk-status" style="display:none"></p>
+        <div class="bk-btn-row">
+          <button class="bk-btn bk-btn-primary bk-tpl-btn" data-action="confirm" data-id="${escHtml(booking.id)}">✅ Bestätigen</button>
+          <button class="bk-btn bk-btn-danger bk-tpl-btn" data-action="cancel" data-id="${escHtml(booking.id)}">❌ Ablehnen</button>
+          <button class="bk-btn bk-btn-outline bk-send-btn" data-id="${escHtml(booking.id)}" style="margin-left:auto">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Senden
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+};
 
 const renderBookings = () => {
-  bookingsBody.innerHTML = state.bootstrap.bookings
-    .map(
-      (booking) => `
-        <tr>
-          <td>${new Date(booking.createdAt).toLocaleString("de-AT")}</td>
-          <td>
-            <strong>${booking.name}</strong><br />
-            <small>${booking.email}</small>
-          </td>
-          <td>${booking.arrival} bis ${booking.departure}</td>
-          <td>${booking.preferredPitch || "-"}</td>
-          <td>${booking.estimatedTotal || "-"}</td>
-          <td>
-            <select data-booking-status="${booking.id}">
-              ${bookingStatusOptions(booking.status)}
-            </select>
-          </td>
-        </tr>
-      `,
-    )
-    .join("");
+  const filters = [
+    { key: 'new', label: 'Neu' },
+    { key: 'confirmed', label: 'Bestätigt' },
+    { key: 'cancelled', label: 'Abgelehnt' },
+    { key: 'all', label: 'Alle' },
+  ];
+  const bookings = state.bootstrap.bookings || [];
+  const counts = {
+    new: bookings.filter(b => b.status === 'new').length,
+    confirmed: bookings.filter(b => b.status === 'confirmed').length,
+    cancelled: bookings.filter(b => b.status === 'cancelled').length,
+    all: bookings.length,
+  };
+  const filtered = state.bookingFilter === 'all'
+    ? [...bookings]
+    : bookings.filter(b => b.status === state.bookingFilter);
+  filtered.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-  bookingsBody.querySelectorAll("[data-booking-status]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      await api(`/api/admin/bookings/${select.dataset.bookingStatus}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: select.value }),
-      });
+  document.getElementById('booking-filters').innerHTML = filters.map(f => `
+    <button class="bk-filter-tab ${state.bookingFilter === f.key ? 'is-active' : ''}" data-filter="${f.key}">
+      ${f.label} (${counts[f.key] ?? filtered.length})
+    </button>
+  `).join('');
+
+  bookingsBody.innerHTML = filtered.length === 0
+    ? `<p class="bk-empty">Keine Anfragen in dieser Kategorie.</p>`
+    : filtered.map(renderBookingCard).join('');
+
+  // Filter-Tabs
+  document.querySelectorAll('.bk-filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.bookingFilter = btn.dataset.filter;
+      renderBookings();
+    });
+  });
+
+  // Antworten-Toggle
+  document.querySelectorAll('.bk-reply-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const replyEl = document.querySelector(`.bk-reply[data-id="${id}"]`);
+      const isOpen = !replyEl.classList.contains('hidden');
+      document.querySelectorAll('.bk-reply').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.bk-reply-toggle').forEach(b => b.textContent = 'Antworten');
+      if (!isOpen) {
+        replyEl.classList.remove('hidden');
+        btn.textContent = 'Schließen';
+        const ta = replyEl.querySelector('.bk-textarea');
+        if (ta) ta.value = ta.dataset.replyTpl;
+      }
+    });
+  });
+
+  // Template laden (Bestätigen / Ablehnen)
+  document.querySelectorAll('.bk-tpl-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const replyEl = btn.closest('.bk-reply');
+      const ta = replyEl.querySelector('.bk-textarea');
+      ta.value = btn.dataset.action === 'confirm' ? ta.dataset.confirmTpl : ta.dataset.cancelTpl;
+      replyEl.dataset.pendingAction = btn.dataset.action;
+      replyEl.querySelectorAll('.bk-tpl-btn').forEach(b => b.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      ta.focus();
+    });
+  });
+
+  // Löschen
+  document.querySelectorAll('.bk-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Anfrage wirklich löschen?')) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/admin/inquiries/booking/${btn.dataset.id}`, { method: 'DELETE' });
+        state.bootstrap.bookings = state.bootstrap.bookings.filter(b => b.id !== btn.dataset.id);
+        renderBookings();
+        renderStats();
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Senden
+  document.querySelectorAll('.bk-send-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const replyEl = btn.closest('.bk-reply');
+      const action = replyEl.dataset.pendingAction || 'reply';
+      const ta = replyEl.querySelector('.bk-textarea');
+      const statusEl = replyEl.querySelector('.bk-status');
+      const message = ta?.value?.trim();
+      if (!message) { alert('Bitte eine Nachricht eingeben.'); return; }
+
+      btn.disabled = true;
+      statusEl.style.display = 'none';
+
+      try {
+        if (action === 'confirm') {
+          await api(`/api/admin/inquiries/booking/${id}/confirm`, { method: 'POST', body: JSON.stringify({ message }) });
+        } else {
+          await api(`/api/admin/inquiries/booking/${id}/reply`, { method: 'POST', body: JSON.stringify({ message }) });
+          if (action === 'cancel') {
+            await api(`/api/admin/bookings/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled' }) });
+          }
+        }
+        const toastMsg = action === 'confirm' ? 'Buchung bestätigt & E-Mail gesendet'
+          : action === 'cancel' ? 'Absage gesendet' : 'Nachricht gesendet';
+        const booking = state.bootstrap.bookings.find(b => b.id === id);
+        if (booking) {
+          if (action === 'confirm') booking.status = 'confirmed';
+          else if (action === 'cancel') booking.status = 'cancelled';
+          else booking.status = 'done';
+        }
+        renderBookings();
+        renderStats();
+        alert(toastMsg);
+      } catch (err) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = err.message;
+        statusEl.style.color = 'var(--danger)';
+        btn.disabled = false;
+      }
     });
   });
 };
