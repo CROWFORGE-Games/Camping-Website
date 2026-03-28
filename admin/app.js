@@ -191,16 +191,17 @@ const renderUsers = () => {
 
 const renderSettings = () => {
   const settings = state.bootstrap.settings;
+  const smtp = settings.smtp || {};
   settingsForm.siteName.value = settings.siteName || "";
   settingsForm.bookingPhone.value = settings.bookingPhone || "";
   settingsForm.bookingRecipientEmail.value = settings.bookingRecipientEmail || "";
-  settingsForm.smtpHost.value = settings.smtp.host || "";
-  settingsForm.smtpPort.value = settings.smtp.port || 587;
-  settingsForm.smtpUser.value = settings.smtp.user || "";
-  settingsForm.smtpPass.value = settings.smtp.pass || "";
-  settingsForm.smtpFromEmail.value = settings.smtp.fromEmail || "";
-  settingsForm.smtpFromName.value = settings.smtp.fromName || "";
-  settingsForm.smtpSecure.checked = Boolean(settings.smtp.secure);
+  settingsForm.smtpHost.value = smtp.host || "";
+  settingsForm.smtpPort.value = smtp.port || 587;
+  settingsForm.smtpUser.value = smtp.user || "";
+  settingsForm.smtpPass.value = smtp.pass || "";
+  settingsForm.smtpFromEmail.value = smtp.fromEmail || "";
+  settingsForm.smtpFromName.value = smtp.fromName || "";
+  settingsForm.smtpSecure.checked = Boolean(smtp.secure);
 };
 
 const renderPageSelector = () => {
@@ -352,6 +353,21 @@ document.querySelector("#save-page").addEventListener("click", async () => {
     body: JSON.stringify({ content: pageEditor.value }),
   });
   pageStatus.textContent = "Seite gespeichert.";
+});
+
+document.querySelector("#reset-page").addEventListener("click", async () => {
+  const label = pageSelector.options[pageSelector.selectedIndex]?.text || pageSelector.value;
+  if (!confirm(`Seite "${label}" wirklich auf die Basis-Vorlage zurücksetzen? Alle gespeicherten Änderungen gehen verloren.`)) {
+    return;
+  }
+  pageStatus.textContent = "";
+  try {
+    const result = await api(`/api/admin/pages/${pageSelector.value}`, { method: "DELETE" });
+    await loadPage(pageSelector.value);
+    pageStatus.textContent = result.message || "Seite zurückgesetzt.";
+  } catch (error) {
+    pageStatus.textContent = error.message;
+  }
 });
 
 uploadInput.addEventListener("change", async () => {

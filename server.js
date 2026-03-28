@@ -32,6 +32,9 @@ const ADMIN_DIR = path.join(ROOT_DIR, "admin");
 
 const PORT = Number(process.env.PORT || 3001);
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
+if (!process.env.SESSION_SECRET) {
+  console.warn("WARNUNG: SESSION_SECRET ist nicht gesetzt! Bitte einen sicheren Wert in der .env-Datei hinterlegen.");
+}
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@hiasenhof.local";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "change-me-now";
 const BOOKING_RECIPIENT_EMAIL =
@@ -234,7 +237,9 @@ const loadStore = () => {
 
 const writeStore = (store) => {
   storeCache = store;
-  fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
+  const tmpFile = STORE_FILE + ".tmp";
+  fs.writeFileSync(tmpFile, JSON.stringify(store, null, 2), "utf8");
+  fs.renameSync(tmpFile, STORE_FILE);
 };
 
 const appsScriptConfig = () => ({
@@ -1288,18 +1293,32 @@ const rateLimit = (maxRequests, windowMs = 60000) => (req, res, next) => {
   next();
 };
 
+const ALLOWED_IMAGE_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"];
+const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"];
+
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, callback) => {
     callback(null, UPLOADS_DIR);
   },
   filename: (_req, file, callback) => {
-    const extension = path.extname(file.originalname);
+    const extension = path.extname(file.originalname).toLowerCase();
     const fileName = `${Date.now()}-${crypto.randomUUID()}${extension}`;
     callback(null, fileName);
   },
 });
 
-const upload = multer({ storage: uploadStorage });
+const upload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_IMAGE_MIMETYPES.includes(file.mimetype) || !ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      callback(new Error("Nur Bilddateien (JPG, PNG, GIF, WebP, AVIF) sind erlaubt."));
+      return;
+    }
+    callback(null, true);
+  },
+});
 const app = express();
 
 if (TRUST_PROXY > 0) {
@@ -1667,6 +1686,24 @@ app.put("/api/admin/pages/:slug", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete("/api/admin/pages/:slug", requireAuth, (req, res) => {
+  const entry = editableFileBySlug(req.params.slug);
+
+  if (!entry) {
+    res.status(404).json({ error: "Seite nicht gefunden." });
+    return;
+  }
+
+  const lang = normalizeLanguage(req.query.lang);
+  const store = loadStore();
+  if (!store.pages) store.pages = {};
+  const key = pageStoreKey(req.params.slug, lang);
+  delete store.pages[key];
+  writeStore(store);
+
+  res.json({ ok: true, message: `Seite "${entry.label}" (${lang}) wurde auf die Basis-Vorlage zurückgesetzt.` });
+});
+
 app.post("/api/admin/users", requireAuth, async (req, res) => {
   const store = loadStore();
   const email = String(req.body.email || "").trim().toLowerCase();
@@ -1675,6 +1712,11 @@ app.post("/api/admin/users", requireAuth, async (req, res) => {
 
   if (!email || !password) {
     res.status(400).json({ error: "E-Mail und Passwort sind erforderlich." });
+    return;
+  }
+
+  if (password.length < 8) {
+    res.status(400).json({ error: "Das Passwort muss mindestens 8 Zeichen lang sein." });
     return;
   }
 
@@ -1903,16 +1945,23 @@ app.delete("/api/admin/inquiries/:type/:id", requireAuth, async (req, res) => {
   res.json({ ok: true, id: req.params.id, type: inquiryType });
 });
 
-app.post("/api/admin/upload-image", requireAuth, upload.single("image"), (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: "Kein Bild hochgeladen." });
-    return;
-  }
+app.post("/api/admin/upload-image", requireAuth, (req, res) => {
+  upload.single("image")(req, res, (uploadError) => {
+    if (uploadError) {
+      res.status(400).json({ error: uploadError.message || "Upload fehlgeschlagen." });
+      return;
+    }
 
-  res.json({
-    ok: true,
-    fileName: req.file.filename,
-    url: `/uploads/${req.file.filename}`,
+    if (!req.file) {
+      res.status(400).json({ error: "Kein Bild hochgeladen." });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      fileName: req.file.filename,
+      url: `/uploads/${req.file.filename}`,
+    });
   });
 });
 
