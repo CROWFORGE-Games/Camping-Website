@@ -2295,6 +2295,9 @@ const saveCurrentPage = async () => {
 const buildBookingConfirmationMessage = (entry) =>
   `Vielen Dank für Ihre Buchung, hiermit bestätige ich Ihre Buchung vom Zeitraum "${formatDateOnlyDisplay(entry.arrival || "")}" bis "${formatDateOnlyDisplay(entry.departure || "")}"${entry.preferredPitch ? `, der Platz "${entry.preferredPitch}" wurde bereits für Sie reserviert.` : "."}`;
 
+const buildBookingRejectionMessage = (entry) =>
+  `Vielen Dank für Ihre Anfrage.${entry.arrival && entry.departure ? ` Leider müssen wir Ihnen mitteilen, dass wir Ihre Buchungsanfrage für den Zeitraum "${formatDateOnlyDisplay(entry.arrival)}" bis "${formatDateOnlyDisplay(entry.departure)}" nicht bestätigen können.` : " Leider können wir Ihrer Anfrage nicht entsprechen."} Wir hoffen, Sie zu einem anderen Zeitpunkt bei uns begrüßen zu dürfen.\n\nMit freundlichen Grüßen\nIhr Team vom Hiasen Hof`;
+
 const renderContactRequests = () => {
   const list = document.querySelector("#site-contact-requests-list");
   if (!list) {
@@ -2366,15 +2369,14 @@ const renderContactRequests = () => {
           <div class="site-contact-request-reply" id="reply-${entry.id}" hidden>
             <textarea data-contact-request-reply-message="${entry.id}" rows="4" placeholder="Antwort eingeben..."></textarea>
             <div class="site-contact-request-reply-actions">
-              ${
-                entry.sourceType === "booking"
-                  ? `<button type="button" class="is-confirm" data-contact-request-confirm="${entry.id}">
-                      Buchung bestätigen
-                    </button>`
-                  : ""
-              }
-              <button type="button" data-contact-request-reply-send="${entry.id}" data-request-type="${entry.sourceType}">
-                Antwort senden
+              <button type="button" class="is-confirm" data-contact-request-confirm="${entry.id}" data-request-type="${entry.sourceType}">
+                Bestätigen
+              </button>
+              <button type="button" class="is-danger" data-contact-request-cancel="${entry.id}" data-request-type="${entry.sourceType}">
+                Ablehnen
+              </button>
+              <button type="button" data-contact-request-reply-send="${entry.id}" data-request-type="${entry.sourceType}" style="margin-left:auto">
+                Senden
               </button>
             </div>
           </div>
@@ -2426,9 +2428,6 @@ const renderContactRequests = () => {
         return;
       }
       replyBox.hidden = !replyBox.hidden;
-      if (!replyBox.hidden && textarea && entry?.sourceType === "booking" && !String(textarea.value || "").trim()) {
-        textarea.value = buildBookingConfirmationMessage(entry);
-      }
     });
   });
 
@@ -2446,20 +2445,34 @@ const renderContactRequests = () => {
       button.disabled = true;
       button.dataset.loading = "true";
 
+      const replyBox = document.querySelector(`#reply-${id}`);
+      const pendingAction = replyBox?.dataset.pendingAction || "reply";
+
       try {
-        await publicApi(`/api/admin/inquiries/${requestType}/${id}/reply`, {
-          method: "POST",
-          body: JSON.stringify({ message }),
-        });
-        editorState.inquiries = editorState.inquiries.map((entry) => (entry.id === id ? { ...entry, status: "done" } : entry));
-        if (textarea) {
-          textarea.value = "";
+        if (pendingAction === "confirm" && requestType === "booking") {
+          const result = await publicApi(`/api/admin/inquiries/booking/${id}/confirm`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+          });
+          refreshPublicData({ showLoading: false }).catch(() => {});
+          if (result && result.spotsWarning) {
+            setEditorStatusMessage(`Buchung bestätigt. Sheets-Warnung: ${result.spotsWarning}`);
+          }
+        } else {
+          await publicApi(`/api/admin/inquiries/${requestType}/${id}/reply`, {
+            method: "POST",
+            body: JSON.stringify({ message }),
+          });
         }
-        const replyBox = document.querySelector(`#reply-${id}`);
+        editorState.inquiries = editorState.inquiries.map((entry) => (entry.id === id ? { ...entry, status: "done" } : entry));
+        if (textarea) textarea.value = "";
         if (replyBox) {
           replyBox.hidden = true;
+          delete replyBox.dataset.pendingAction;
         }
         renderContactRequests();
+      } catch (error) {
+        setEditorStatusMessage(error.message || "Antwort konnte nicht gesendet werden.");
       } finally {
         button.disabled = false;
         button.dataset.loading = "false";
@@ -2468,39 +2481,34 @@ const renderContactRequests = () => {
   });
 
   list.querySelectorAll("[data-contact-request-confirm]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       const id = button.getAttribute("data-contact-request-confirm");
-      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
       const entry = (editorState.inquiries || []).find((item) => item.id === id);
-      const message = String(textarea?.value || "").trim() || buildBookingConfirmationMessage(entry || {});
+      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
+      const replyBox = document.querySelector(`#reply-${id}`);
+      if (textarea) textarea.value = buildBookingConfirmationMessage(entry || {});
+      if (replyBox) replyBox.dataset.pendingAction = "confirm";
+      button.closest(".site-contact-request-reply-actions")
+        ?.querySelectorAll(".is-confirm, .is-danger")
+        .forEach((b) => b.classList.remove("is-selected"));
+      button.classList.add("is-selected");
+      textarea?.focus();
+    });
+  });
 
-      button.disabled = true;
-      button.dataset.loading = "true";
-
-      try {
-        const result = await publicApi(`/api/admin/inquiries/booking/${id}/confirm`, {
-          method: "POST",
-          body: JSON.stringify({ message }),
-        });
-        editorState.inquiries = editorState.inquiries.map((item) => (item.id === id ? { ...item, status: "done" } : item));
-        if (textarea) {
-          textarea.value = "";
-        }
-        const replyBox = document.querySelector(`#reply-${id}`);
-        if (replyBox) {
-          replyBox.hidden = true;
-        }
-        renderContactRequests();
-        refreshPublicData({ showLoading: false }).catch(() => {});
-        if (result && result.spotsWarning) {
-          setEditorStatusMessage(`Buchung bestätigt. Sheets-Warnung: ${result.spotsWarning}`);
-        }
-      } catch (error) {
-        setEditorStatusMessage(error.message || "Buchungsbestätigung fehlgeschlagen.");
-      } finally {
-        button.disabled = false;
-        button.dataset.loading = "false";
-      }
+  list.querySelectorAll("[data-contact-request-cancel]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-contact-request-cancel");
+      const entry = (editorState.inquiries || []).find((item) => item.id === id);
+      const textarea = document.querySelector(`[data-contact-request-reply-message="${id}"]`);
+      const replyBox = document.querySelector(`#reply-${id}`);
+      if (textarea) textarea.value = buildBookingRejectionMessage(entry || {});
+      if (replyBox) replyBox.dataset.pendingAction = "cancel";
+      button.closest(".site-contact-request-reply-actions")
+        ?.querySelectorAll(".is-confirm, .is-danger")
+        .forEach((b) => b.classList.remove("is-selected"));
+      button.classList.add("is-selected");
+      textarea?.focus();
     });
   });
 
